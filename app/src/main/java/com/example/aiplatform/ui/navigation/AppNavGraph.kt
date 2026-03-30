@@ -124,7 +124,12 @@ fun AppNavGraph() {
         ) { backStackEntry ->
             val projectId = backStackEntry.arguments?.getString("projectId").orEmpty()
             val vm: McpViewModel = viewModel(factory = AppViewModelFactory {
-                McpViewModel(projectId = projectId, mcpRepository = container.mcpRepository)
+                McpViewModel(
+                    projectId = projectId,
+                    mcpRepository = container.mcpRepository,
+                    projectRepository = container.projectRepository,
+                    githubMcpServer = container.githubMcpServer
+                )
             })
             McpScreen(viewModel = vm)
         }

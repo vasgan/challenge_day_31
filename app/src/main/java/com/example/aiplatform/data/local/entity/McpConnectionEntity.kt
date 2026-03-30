@@ -11,5 +11,8 @@ import androidx.room.PrimaryKey
 data class McpConnectionEntity(
     @PrimaryKey val id: String,
     val projectId: String,
-    val serverUrl: String
+    val name: String,
+    val serverUrl: String,
+    val projectPath: String,
+    val connectionType: String
 )

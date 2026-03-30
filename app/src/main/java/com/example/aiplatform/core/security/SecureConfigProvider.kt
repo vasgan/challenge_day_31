@@ -6,6 +6,7 @@ class MissingApiKeyException : IllegalStateException("OpenAI API token is missin
 
 interface SecureConfigProvider {
     fun openAiApiKey(): String
+    fun githubApiTokenOrNull(): String?
 }
 
 class DefaultSecureConfigProvider : SecureConfigProvider {
@@ -17,5 +18,15 @@ class DefaultSecureConfigProvider : SecureConfigProvider {
         if (envValue.isNotEmpty()) return envValue
 
         throw MissingApiKeyException()
+    }
+
+    override fun githubApiTokenOrNull(): String? {
+        val buildConfigValue = BuildConfig.GITHUB_API_TOKEN.trim()
+        if (buildConfigValue.isNotEmpty()) return buildConfigValue
+
+        val envValue = System.getenv("GITHUB_API_TOKEN")?.trim().orEmpty()
+        if (envValue.isNotEmpty()) return envValue
+
+        return null
     }
 }

@@ -5,6 +5,7 @@ import com.example.aiplatform.data.mapper.toDomain
 import com.example.aiplatform.data.local.entity.RagChunkEntity
 import com.example.aiplatform.data.mapper.toEntity
 import com.example.aiplatform.domain.model.RagChunk
+import com.example.aiplatform.domain.model.RagDocumentChunk
 import com.example.aiplatform.domain.model.RagIndex
 import com.example.aiplatform.domain.repository.OpenAiRepository
 import com.example.aiplatform.domain.repository.RagRepository
@@ -27,16 +28,18 @@ class RagRepositoryImpl(
         ragDao.upsertIndex(index.toEntity())
     }
 
-    override suspend fun addDocuments(index: RagIndex, chunks: List<String>) {
+    override suspend fun addDocuments(index: RagIndex, chunks: List<RagDocumentChunk>) {
         if (chunks.isEmpty()) return
-        val embeddings = openAiRepository.embeddings(chunks)
-        val entities = chunks.mapIndexed { i, text ->
+        val embeddings = openAiRepository.embeddings(chunks.map { it.content })
+        val entities = chunks.mapIndexed { i, chunk ->
             RagChunkEntity(
                 id = UUID.randomUUID().toString(),
                 indexId = index.id,
                 projectId = index.projectId,
-                content = text,
-                embeddingJson = embeddings[i].joinToString(",")
+                content = chunk.content,
+                embeddingJson = embeddings[i].joinToString(","),
+                source = chunk.source,
+                section = chunk.section
             )
         }
         ragDao.insertChunks(entities)

@@ -25,4 +25,8 @@ class ProjectRepositoryImpl(
     override suspend fun updateProjectModel(projectId: String, model: ProjectTextModel) {
         projectDao.updateModel(projectId, model.apiName)
     }
+
+    override suspend fun updateProjectRootPath(projectId: String, rootPath: String) {
+        projectDao.updateRootPath(projectId, rootPath)
+    }
 }

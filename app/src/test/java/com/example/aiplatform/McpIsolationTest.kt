@@ -3,6 +3,7 @@ package com.example.aiplatform
 import com.example.aiplatform.agent.McpAgent
 import com.example.aiplatform.data.mcp.GitBranchTool
 import com.example.aiplatform.domain.model.McpConnection
+import com.example.aiplatform.domain.model.McpConnectionType
 import com.example.aiplatform.domain.repository.McpRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -15,8 +16,8 @@ class McpIsolationTest {
     fun `mcp agent fetches connections only for current project`() = runTest {
         val repository = FakeMcpRepository(
             listOf(
-                McpConnection("1", "project-a", "https://mcp/a/main"),
-                McpConnection("2", "project-b", "https://mcp/b/dev")
+                McpConnection("1", "project-a", "git-a", "git://local", "/tmp/a", McpConnectionType.GIT),
+                McpConnection("2", "project-b", "git-b", "git://local", "/tmp/b", McpConnectionType.GIT)
             )
         )
         val agent = McpAgent(repository, GitBranchTool())
@@ -38,6 +39,10 @@ class McpIsolationTest {
         override suspend fun listConnections(projectId: String): List<McpConnection> {
             lastRequestedProject = projectId
             return all.filter { it.projectId == projectId }
+        }
+
+        override suspend fun listConnections(projectId: String, type: McpConnectionType): List<McpConnection> {
+            return all.filter { it.projectId == projectId && it.connectionType == type }
         }
 
         override suspend fun upsertConnection(connection: McpConnection) {}

@@ -20,4 +20,7 @@ interface ProjectDao {
 
     @Query("UPDATE projects SET selectedModel = :selectedModel WHERE id = :projectId")
     suspend fun updateModel(projectId: String, selectedModel: String)
+
+    @Query("UPDATE projects SET rootPath = :rootPath WHERE id = :projectId")
+    suspend fun updateRootPath(projectId: String, rootPath: String)
 }

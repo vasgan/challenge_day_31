@@ -30,7 +30,7 @@ fun ProjectScreen(
 
         Button(onClick = openChats, modifier = Modifier.fillMaxWidth()) { Text("Chats") }
         Button(onClick = openSettings, modifier = Modifier.fillMaxWidth()) { Text("Settings (model)") }
-        Button(onClick = openMcp, modifier = Modifier.fillMaxWidth()) { Text("MCP connections") }
+        Button(onClick = openMcp, modifier = Modifier.fillMaxWidth()) { Text("MCP connections / Добавить GitHub MCP") }
         Button(onClick = openRag, modifier = Modifier.fillMaxWidth()) { Text("RAG indexes") }
         Button(onClick = openMemory, modifier = Modifier.fillMaxWidth()) { Text("Memory") }
     }

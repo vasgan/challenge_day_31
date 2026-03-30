@@ -5,7 +5,8 @@ data class Project(
     val title: String,
     val description: String,
     val selectedModel: ProjectTextModel,
-    val createdAt: Long
+    val createdAt: Long,
+    val rootPath: String
 )
 
 data class Chat(
@@ -38,8 +39,17 @@ data class ProjectMemory(
 data class McpConnection(
     val id: String,
     val projectId: String,
-    val serverUrl: String
+    val name: String,
+    val serverUrl: String,
+    val projectPath: String,
+    val connectionType: McpConnectionType
 )
+
+enum class McpConnectionType {
+    GENERIC,
+    GIT,
+    GITHUB
+}
 
 data class RagIndex(
     val id: String,
@@ -53,7 +63,15 @@ data class RagChunk(
     val indexId: String,
     val projectId: String,
     val content: String,
-    val embedding: List<Double>
+    val embedding: List<Double>,
+    val source: String,
+    val section: String
+)
+
+data class RagDocumentChunk(
+    val content: String,
+    val source: String,
+    val section: String
 )
 
 object MemoryPolicy {

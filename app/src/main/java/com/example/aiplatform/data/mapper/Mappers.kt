@@ -4,14 +4,17 @@ import com.example.aiplatform.data.local.entity.ChatEntity
 import com.example.aiplatform.data.local.entity.McpConnectionEntity
 import com.example.aiplatform.data.local.entity.MessageEntity
 import com.example.aiplatform.data.local.entity.ProjectEntity
+import com.example.aiplatform.data.local.entity.ProjectGithubBindingEntity
 import com.example.aiplatform.data.local.entity.ProjectMemoryEntity
 import com.example.aiplatform.data.local.entity.RagChunkEntity
 import com.example.aiplatform.data.local.entity.RagIndexEntity
 import com.example.aiplatform.domain.model.Chat
 import com.example.aiplatform.domain.model.McpConnection
+import com.example.aiplatform.domain.model.McpConnectionType
 import com.example.aiplatform.domain.model.Message
 import com.example.aiplatform.domain.model.MessageRole
 import com.example.aiplatform.domain.model.Project
+import com.example.aiplatform.domain.model.ProjectGithubBinding
 import com.example.aiplatform.domain.model.ProjectMemory
 import com.example.aiplatform.domain.model.ProjectTextModel
 import com.example.aiplatform.domain.model.RagChunk
@@ -22,7 +25,8 @@ fun ProjectEntity.toDomain(): Project = Project(
     title = title,
     description = description,
     selectedModel = ProjectTextModel.fromApiName(selectedModel),
-    createdAt = createdAt
+    createdAt = createdAt,
+    rootPath = rootPath
 )
 
 fun Project.toEntity(): ProjectEntity = ProjectEntity(
@@ -30,7 +34,8 @@ fun Project.toEntity(): ProjectEntity = ProjectEntity(
     title = title,
     description = description,
     selectedModel = selectedModel.apiName,
-    createdAt = createdAt
+    createdAt = createdAt,
+    rootPath = rootPath
 )
 
 fun ChatEntity.toDomain(): Chat = Chat(id, projectId, title)
@@ -64,9 +69,23 @@ fun ProjectMemoryEntity.toDomain(): ProjectMemory = ProjectMemory(
 
 fun ProjectMemory.toEntity(): ProjectMemoryEntity = ProjectMemoryEntity(projectId, summary, updatedAt)
 
-fun McpConnectionEntity.toDomain(): McpConnection = McpConnection(id, projectId, serverUrl)
+fun McpConnectionEntity.toDomain(): McpConnection = McpConnection(
+    id = id,
+    projectId = projectId,
+    name = name,
+    serverUrl = serverUrl,
+    projectPath = projectPath,
+    connectionType = McpConnectionType.valueOf(connectionType)
+)
 
-fun McpConnection.toEntity(): McpConnectionEntity = McpConnectionEntity(id, projectId, serverUrl)
+fun McpConnection.toEntity(): McpConnectionEntity = McpConnectionEntity(
+    id = id,
+    projectId = projectId,
+    name = name,
+    serverUrl = serverUrl,
+    projectPath = projectPath,
+    connectionType = connectionType.name
+)
 
 fun RagIndexEntity.toDomain(): RagIndex = RagIndex(id, projectId, title, isActive)
 
@@ -77,7 +96,9 @@ fun RagChunkEntity.toDomain(): RagChunk = RagChunk(
     indexId = indexId,
     projectId = projectId,
     content = content,
-    embedding = embeddingJson.split(",").mapNotNull { it.toDoubleOrNull() }
+    embedding = embeddingJson.split(",").mapNotNull { it.toDoubleOrNull() },
+    source = source,
+    section = section
 )
 
 fun RagChunk.toEntity(): RagChunkEntity = RagChunkEntity(
@@ -85,5 +106,29 @@ fun RagChunk.toEntity(): RagChunkEntity = RagChunkEntity(
     indexId = indexId,
     projectId = projectId,
     content = content,
-    embeddingJson = embedding.joinToString(",")
+    embeddingJson = embedding.joinToString(","),
+    source = source,
+    section = section
+)
+
+fun ProjectGithubBindingEntity.toDomain(): ProjectGithubBinding = ProjectGithubBinding(
+    projectId = projectId,
+    owner = owner,
+    repo = repo,
+    repoUrl = repoUrl,
+    defaultBranch = defaultBranch,
+    readmeImportedAt = readmeImportedAt,
+    ragIndexId = ragIndexId,
+    createdAt = createdAt
+)
+
+fun ProjectGithubBinding.toEntity(): ProjectGithubBindingEntity = ProjectGithubBindingEntity(
+    projectId = projectId,
+    owner = owner,
+    repo = repo,
+    repoUrl = repoUrl,
+    defaultBranch = defaultBranch,
+    readmeImportedAt = readmeImportedAt,
+    ragIndexId = ragIndexId,
+    createdAt = createdAt
 )

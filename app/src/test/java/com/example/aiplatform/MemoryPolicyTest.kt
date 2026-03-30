@@ -25,7 +25,7 @@ class MemoryPolicyTest {
         val openAi = FakeOpenAiRepository()
         val manager = ProjectMemoryManager(chatRepo, memoryRepo, openAi)
 
-        val project = Project("p1", "P", "", ProjectTextModel.GPT_5_MINI, 0)
+        val project = Project("p1", "P", "", ProjectTextModel.GPT_5_MINI, 0, "")
         val chatId = "chat-1"
         chatRepo.chats[chatId] = Chat(chatId, "p1", "General")
 

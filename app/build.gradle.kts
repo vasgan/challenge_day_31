@@ -76,8 +76,16 @@ android {
         ?: System.getenv("OPENAI_API_KEY")
         ?: ""
 
+    val githubTokenFromProperty = (project.findProperty("GITHUB_API_TOKEN") as String?)
+        ?: (project.rootProject.findProperty("GITHUB_API_TOKEN") as String?)
+        ?: localProperties.getProperty("GITHUB_API_TOKEN")
+        ?: secretsProperties.getProperty("GITHUB_API_TOKEN")
+        ?: System.getenv("GITHUB_API_TOKEN")
+        ?: ""
+
     defaultConfig {
         buildConfigField("String", "OPENAI_API_KEY", "\"$openAiKeyFromProperty\"")
+        buildConfigField("String", "GITHUB_API_TOKEN", "\"$githubTokenFromProperty\"")
     }
 }
 

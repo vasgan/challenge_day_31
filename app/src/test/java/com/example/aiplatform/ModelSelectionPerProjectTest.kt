@@ -5,14 +5,19 @@ import com.example.aiplatform.agent.ChatAgent
 import com.example.aiplatform.agent.McpAgent
 import com.example.aiplatform.agent.MemoryAgent
 import com.example.aiplatform.agent.RagAgent
+import com.example.aiplatform.assistant.DeveloperAssistantHandler
+import com.example.aiplatform.assistant.DeveloperAssistantResult
 import com.example.aiplatform.data.mcp.GitBranchTool
 import com.example.aiplatform.data.memory.ProjectMemoryManager
 import com.example.aiplatform.domain.model.Chat
+import com.example.aiplatform.domain.model.McpConnection
+import com.example.aiplatform.domain.model.McpConnectionType
 import com.example.aiplatform.domain.model.Message
 import com.example.aiplatform.domain.model.Project
 import com.example.aiplatform.domain.model.ProjectMemory
 import com.example.aiplatform.domain.model.ProjectTextModel
 import com.example.aiplatform.domain.model.RagChunk
+import com.example.aiplatform.domain.model.RagDocumentChunk
 import com.example.aiplatform.domain.model.RagIndex
 import com.example.aiplatform.domain.repository.ChatRepository
 import com.example.aiplatform.domain.repository.McpRepository
@@ -32,8 +37,8 @@ class ModelSelectionPerProjectTest {
     fun `orchestrator uses model selected per project`() = runTest {
         val projectRepo = FakeProjectRepository(
             listOf(
-                Project("p1", "P1", "", ProjectTextModel.GPT_5_NANO, 0),
-                Project("p2", "P2", "", ProjectTextModel.GPT_5_CODER, 0)
+                Project("p1", "P1", "", ProjectTextModel.GPT_5_NANO, 0, ""),
+                Project("p2", "P2", "", ProjectTextModel.GPT_5_CODER, 0, "")
             )
         )
         val chatRepo = FakeChatRepository(
@@ -54,7 +59,8 @@ class ModelSelectionPerProjectTest {
             chatAgent = ChatAgent(chatRepo),
             ragAgent = RagAgent(ragRepo),
             mcpAgent = McpAgent(mcpRepo, GitBranchTool()),
-            memoryAgent = MemoryAgent(ProjectMemoryManager(chatRepo, memoryRepo, openAi))
+            memoryAgent = MemoryAgent(ProjectMemoryManager(chatRepo, memoryRepo, openAi)),
+            developerAssistantHandler = NoopDeveloperAssistantHandler()
         )
 
         orchestrator.sendMessage("p1", "c1", "hi")
@@ -69,6 +75,7 @@ class ModelSelectionPerProjectTest {
         override suspend fun getProject(projectId: String): Project? = byId[projectId]
         override suspend fun createProject(project: Project) {}
         override suspend fun updateProjectModel(projectId: String, model: ProjectTextModel) {}
+        override suspend fun updateProjectRootPath(projectId: String, rootPath: String) {}
     }
 
     private class FakeChatRepository(chats: Map<String, Chat>) : ChatRepository {
@@ -118,13 +125,20 @@ class ModelSelectionPerProjectTest {
         override fun observeIndexes(projectId: String): Flow<List<RagIndex>> = emptyFlow()
         override suspend fun listActiveIndexes(projectId: String): List<RagIndex> = emptyList()
         override suspend fun upsertIndex(index: RagIndex) {}
-        override suspend fun addDocuments(index: RagIndex, chunks: List<String>) {}
+        override suspend fun addDocuments(index: RagIndex, chunks: List<RagDocumentChunk>) {}
         override suspend fun retrieve(projectId: String, query: String, topK: Int): List<RagChunk> = emptyList()
     }
 
     private class FakeMcpRepository : McpRepository {
-        override fun observeConnections(projectId: String) = emptyFlow<List<com.example.aiplatform.domain.model.McpConnection>>()
-        override suspend fun listConnections(projectId: String) = emptyList<com.example.aiplatform.domain.model.McpConnection>()
-        override suspend fun upsertConnection(connection: com.example.aiplatform.domain.model.McpConnection) {}
+        override fun observeConnections(projectId: String) = emptyFlow<List<McpConnection>>()
+        override suspend fun listConnections(projectId: String) = emptyList<McpConnection>()
+        override suspend fun listConnections(projectId: String, type: McpConnectionType) = emptyList<McpConnection>()
+        override suspend fun upsertConnection(connection: McpConnection) {}
+    }
+
+    private class NoopDeveloperAssistantHandler : DeveloperAssistantHandler {
+        override suspend fun handleHelp(projectId: String, chatId: String, userQuestion: String): DeveloperAssistantResult {
+            return DeveloperAssistantResult("help", usedRag = false, usedMcp = false)
+        }
     }
 }

@@ -2,6 +2,7 @@ package com.example.aiplatform.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.aiplatform.domain.model.RagDocumentChunk
 import com.example.aiplatform.domain.model.RagIndex
 import com.example.aiplatform.domain.repository.RagRepository
 import java.util.UUID
@@ -34,7 +35,16 @@ class RagViewModel(
     }
 
     fun addDocument(index: RagIndex, rawText: String) {
-        val chunks = rawText.split("\n\n").map { it.trim() }.filter { it.isNotBlank() }
+        val chunks = rawText.split("\n\n")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .mapIndexed { i, chunk ->
+                RagDocumentChunk(
+                    content = chunk,
+                    source = "manual-input",
+                    section = "part-${i + 1}"
+                )
+            }
         viewModelScope.launch {
             ragRepository.addDocuments(index, chunks)
         }

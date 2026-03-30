@@ -13,5 +13,7 @@ data class RagChunkEntity(
     val indexId: String,
     val projectId: String,
     val content: String,
-    val embeddingJson: String
+    val embeddingJson: String,
+    val source: String,
+    val section: String
 )

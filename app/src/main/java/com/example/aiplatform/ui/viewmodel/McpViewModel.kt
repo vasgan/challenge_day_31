@@ -2,23 +2,59 @@ package com.example.aiplatform.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.aiplatform.data.mcp.github.GithubMcpServer
+import com.example.aiplatform.domain.model.GithubRepo
 import com.example.aiplatform.domain.model.McpConnection
+import com.example.aiplatform.domain.model.McpConnectionType
+import com.example.aiplatform.domain.model.ProjectGithubBinding
 import com.example.aiplatform.domain.repository.McpRepository
+import com.example.aiplatform.domain.repository.ProjectRepository
 import java.util.UUID
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+enum class GithubMcpUiStatus {
+    Idle,
+    LoadingRepos,
+    RepoListLoaded,
+    BindingRepo,
+    ReadmeImporting,
+    RagBuilding,
+    Success,
+    Error
+}
+
+data class GithubMcpUiState(
+    val status: GithubMcpUiStatus = GithubMcpUiStatus.Idle,
+    val ownerInput: String = "",
+    val repos: List<GithubRepo> = emptyList(),
+    val selectedRepo: GithubRepo? = null,
+    val binding: ProjectGithubBinding? = null,
+    val message: String = "",
+    val error: String = ""
+)
+
 class McpViewModel(
     private val projectId: String,
-    private val mcpRepository: McpRepository
+    private val mcpRepository: McpRepository,
+    private val projectRepository: ProjectRepository,
+    private val githubMcpServer: GithubMcpServer
 ) : ViewModel() {
     val connections: StateFlow<List<McpConnection>> = mcpRepository.observeConnections(projectId).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
+    private val _githubUiState = MutableStateFlow(GithubMcpUiState())
+    val githubUiState: StateFlow<GithubMcpUiState> = _githubUiState.asStateFlow()
+
+    init {
+        refreshBinding()
+    }
 
     fun addConnection(serverUrl: String) {
         viewModelScope.launch {
@@ -26,9 +62,148 @@ class McpViewModel(
                 McpConnection(
                     id = UUID.randomUUID().toString(),
                     projectId = projectId,
-                    serverUrl = serverUrl
+                    name = "Generic MCP",
+                    serverUrl = serverUrl,
+                    projectPath = "",
+                    connectionType = McpConnectionType.GENERIC
                 )
             )
+        }
+    }
+
+    fun addGitConnection(name: String, projectPath: String) {
+        viewModelScope.launch {
+            mcpRepository.upsertConnection(
+                McpConnection(
+                    id = UUID.randomUUID().toString(),
+                    projectId = projectId,
+                    name = name,
+                    serverUrl = "git://local",
+                    projectPath = projectPath,
+                    connectionType = McpConnectionType.GIT
+                )
+            )
+            projectRepository.updateProjectRootPath(projectId, projectPath)
+        }
+    }
+
+    fun updateOwner(owner: String) {
+        _githubUiState.value = _githubUiState.value.copy(ownerInput = owner, error = "", message = "")
+    }
+
+    fun loadReposByOwner() {
+        val owner = _githubUiState.value.ownerInput.trim()
+        if (owner.isBlank()) {
+            _githubUiState.value = _githubUiState.value.copy(
+                status = GithubMcpUiStatus.Error,
+                error = "Введите owner"
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            _githubUiState.value = _githubUiState.value.copy(status = GithubMcpUiStatus.LoadingRepos, error = "")
+            val repos = githubMcpServer.githubListUserRepos(owner).getOrElse { throwable ->
+                _githubUiState.value = _githubUiState.value.copy(
+                    status = GithubMcpUiStatus.Error,
+                    error = throwable.message ?: "Не удалось загрузить репозитории",
+                    repos = emptyList(),
+                    selectedRepo = null
+                )
+                return@launch
+            }
+
+            _githubUiState.value = _githubUiState.value.copy(
+                status = GithubMcpUiStatus.RepoListLoaded,
+                repos = repos,
+                selectedRepo = null,
+                message = "Найдено репозиториев: ${repos.size}",
+                error = ""
+            )
+        }
+    }
+
+    fun selectRepo(repo: GithubRepo) {
+        _githubUiState.value = _githubUiState.value.copy(selectedRepo = repo, error = "", message = "")
+    }
+
+    fun bindSelectedRepo() {
+        val owner = _githubUiState.value.ownerInput.trim()
+        val selectedRepo = _githubUiState.value.selectedRepo
+        if (selectedRepo == null) {
+            _githubUiState.value = _githubUiState.value.copy(
+                status = GithubMcpUiStatus.Error,
+                error = "Выберите репозиторий из списка"
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            _githubUiState.value = _githubUiState.value.copy(status = GithubMcpUiStatus.BindingRepo, error = "")
+
+            val binding = githubMcpServer.githubBindRepoToProject(projectId, owner, selectedRepo.name).getOrElse { throwable ->
+                _githubUiState.value = _githubUiState.value.copy(
+                    status = GithubMcpUiStatus.Error,
+                    error = throwable.message ?: "Не удалось привязать репозиторий"
+                )
+                return@launch
+            }
+
+            // Register internal GitHub MCP endpoint as project-scoped connection metadata.
+            mcpRepository.upsertConnection(
+                McpConnection(
+                    id = "github-mcp-$projectId",
+                    projectId = projectId,
+                    name = "GitHub MCP (${binding.owner}/${binding.repo})",
+                    serverUrl = "mcp://internal/github",
+                    projectPath = "${binding.owner}/${binding.repo}",
+                    connectionType = McpConnectionType.GITHUB
+                )
+            )
+
+            _githubUiState.value = _githubUiState.value.copy(
+                status = GithubMcpUiStatus.Success,
+                binding = binding,
+                message = "Репозиторий привязан: ${binding.owner}/${binding.repo}",
+                error = ""
+            )
+        }
+    }
+
+    fun importReadmeAndBuildRag() {
+        viewModelScope.launch {
+            _githubUiState.value = _githubUiState.value.copy(status = GithubMcpUiStatus.ReadmeImporting, error = "")
+
+            githubMcpServer.githubFetchReadme(projectId).getOrElse { throwable ->
+                _githubUiState.value = _githubUiState.value.copy(
+                    status = GithubMcpUiStatus.Error,
+                    error = throwable.message ?: "Не удалось импортировать README"
+                )
+                return@launch
+            }
+
+            _githubUiState.value = _githubUiState.value.copy(status = GithubMcpUiStatus.RagBuilding)
+            val ragResult = githubMcpServer.githubBuildRagFromReadme(projectId).getOrElse { throwable ->
+                _githubUiState.value = _githubUiState.value.copy(
+                    status = GithubMcpUiStatus.Error,
+                    error = throwable.message ?: "Не удалось построить RAG из README"
+                )
+                return@launch
+            }
+
+            refreshBinding()
+            _githubUiState.value = _githubUiState.value.copy(
+                status = GithubMcpUiStatus.Success,
+                message = "README импортирован. RAG index: ${ragResult.ragIndexId}, chunks=${ragResult.chunkCount}",
+                error = ""
+            )
+        }
+    }
+
+    fun refreshBinding() {
+        viewModelScope.launch {
+            val binding = githubMcpServer.githubGetBoundRepo(projectId).getOrNull()
+            _githubUiState.value = _githubUiState.value.copy(binding = binding)
         }
     }
 }

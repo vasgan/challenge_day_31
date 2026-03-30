@@ -32,7 +32,8 @@ class ProjectsViewModel(
                     title = title,
                     description = description,
                     selectedModel = ProjectTextModel.GPT_5_MINI,
-                    createdAt = System.currentTimeMillis()
+                    createdAt = System.currentTimeMillis(),
+                    rootPath = ""
                 )
             )
             chatRepository.createChat(

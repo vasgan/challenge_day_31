@@ -9,5 +9,6 @@ data class ProjectEntity(
     val title: String,
     val description: String,
     val selectedModel: String,
-    val createdAt: Long
+    val createdAt: Long,
+    val rootPath: String
 )

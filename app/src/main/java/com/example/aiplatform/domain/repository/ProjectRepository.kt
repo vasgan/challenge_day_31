@@ -9,4 +9,5 @@ interface ProjectRepository {
     suspend fun getProject(projectId: String): Project?
     suspend fun createProject(project: Project)
     suspend fun updateProjectModel(projectId: String, model: ProjectTextModel)
+    suspend fun updateProjectRootPath(projectId: String, rootPath: String)
 }

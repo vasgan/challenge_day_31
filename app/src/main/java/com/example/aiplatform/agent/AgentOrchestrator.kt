@@ -1,5 +1,6 @@
 package com.example.aiplatform.agent
 
+import com.example.aiplatform.assistant.DeveloperAssistantHandler
 import com.example.aiplatform.domain.agent.AgentContext
 import com.example.aiplatform.domain.agent.AgentResult
 import com.example.aiplatform.domain.model.Message
@@ -22,7 +23,8 @@ class AgentOrchestrator(
     private val chatAgent: ChatAgent,
     private val ragAgent: RagAgent,
     private val mcpAgent: McpAgent,
-    private val memoryAgent: MemoryAgent
+    private val memoryAgent: MemoryAgent,
+    private val developerAssistantHandler: DeveloperAssistantHandler
 ) {
 
     suspend fun sendMessage(projectId: String, chatId: String, userInput: String): AgentResult {
@@ -41,6 +43,26 @@ class AgentOrchestrator(
                 createdAt = System.currentTimeMillis()
             )
         )
+
+        if (userInput.trim().startsWith("/help")) {
+            val helpQuestion = userInput.trim().removePrefix("/help").trim()
+            val helpResult = developerAssistantHandler.handleHelp(projectId, chatId, helpQuestion)
+            chatRepository.addMessage(
+                Message(
+                    id = UUID.randomUUID().toString(),
+                    chatId = chatId,
+                    role = MessageRole.ASSISTANT,
+                    content = helpResult.answer,
+                    metadata = "{\"helpCommand\":true,\"usedRag\":${helpResult.usedRag},\"usedMcp\":${helpResult.usedMcp}}",
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            return AgentResult(
+                answer = helpResult.answer,
+                usedRag = helpResult.usedRag,
+                usedMcp = helpResult.usedMcp
+            )
+        }
 
         val memoryWindow = memoryAgent.collect(project, chatId)
         val chatWindow = chatAgent.chatWindow(chatId)
