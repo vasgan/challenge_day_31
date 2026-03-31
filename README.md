@@ -2,7 +2,7 @@
 
 Android-приложение для project-scoped developer assistant workflow.
 
-## Что уже реализовано
+## Что реализовано сейчас
 
 - `Projects` (изолированные рабочие контексты)
 - `Chats` внутри проекта
@@ -10,14 +10,28 @@ Android-приложение для project-scoped developer assistant workflow.
 - `RAG` индексы, привязанные к проекту
 - `MCP` подключения, привязанные к проекту
 - `/help` routing через `DeveloperAssistantService`
-- OpenAI only: `POST /v1/responses` и `POST /v1/embeddings`
+- `/review_pr` routing через `PullRequestReviewService`
+- OpenAI only:
+  - `POST /v1/responses`
+  - `POST /v1/embeddings`
 - Compose UI
+
+## Команды в чате
+
+- `/help <вопрос>` — вопросы о проекте с использованием project memory + project RAG + repo context.
+- `/review_pr` — список открытых PR текущего привязанного GitHub repo.
+- `/review_pr <number>` — AI review конкретного PR:
+  - анализ diff + changed files + project RAG
+  - ответ в чат новым assistant-сообщением
+  - попытка публикации review в GitHub PR.
 
 ## Внутренний GitHub MCP server
 
-В приложении реализован **собственный MCP server** (не внешний), который работает с GitHub API.
+В приложении используется **собственный MCP server** (внутри app, не внешний), который работает через GitHub API.
 
 ### MCP tools
+
+#### Repo / README / RAG
 
 - `github_list_user_repos`
 - `github_bind_repo_to_project`
@@ -25,19 +39,30 @@ Android-приложение для project-scoped developer assistant workflow.
 - `github_fetch_readme`
 - `github_build_rag_from_readme`
 
+#### Pull Request review
+
+- `github_list_open_pull_requests`
+- `github_get_pull_request_details`
+- `github_get_pull_request_files`
+- `github_get_pull_request_diff`
+- `github_submit_pull_request_review`
+
 ### Где реализовано
 
-- MCP contracts/tools: `app/src/main/java/com/example/aiplatform/data/mcp/github/GithubMcpContracts.kt`
-- Tool registry: `app/src/main/java/com/example/aiplatform/data/mcp/github/GithubToolRegistry.kt`
-- Tool executor: `app/src/main/java/com/example/aiplatform/data/mcp/github/GithubMcpToolExecutorImpl.kt`
-- MCP server facade: `app/src/main/java/com/example/aiplatform/data/mcp/github/GithubMcpServer.kt`
-- GitHub API client: `app/src/main/java/com/example/aiplatform/data/github/GithubApiClient.kt`
+- MCP contracts/tools:
+  - `app/src/main/java/com/example/aiplatform/data/mcp/github/GithubMcpContracts.kt`
+- Tool registry:
+  - `app/src/main/java/com/example/aiplatform/data/mcp/github/GithubToolRegistry.kt`
+- Tool executor:
+  - `app/src/main/java/com/example/aiplatform/data/mcp/github/GithubMcpToolExecutorImpl.kt`
+- MCP server facade:
+  - `app/src/main/java/com/example/aiplatform/data/mcp/github/GithubMcpServer.kt`
+- GitHub API client:
+  - `app/src/main/java/com/example/aiplatform/data/github/GithubApiClient.kt`
 
 ## Project-scoped GitHub binding
 
-Для привязки репозитория к проекту используется локальная Room сущность:
-
-- `ProjectGithubBindingEntity`
+Привязка repo к проекту хранится в Room-сущности `ProjectGithubBindingEntity`.
 
 Поля:
 
@@ -83,20 +108,38 @@ Metadata source для chunk:
 - project RAG retrieval
 - bound repo context (`defaultBranch`)
 
-Если проектный RAG уже построен из GitHub README, `/help` автоматически использует эти документы.
+## /review_pr flow
 
-## UI flow (MCP экран)
+`/review_pr` и `/review_pr <number>` перехватываются в `AgentOrchestrator` до обычного chat flow.
 
-На `McpScreen`:
+`PullRequestReviewService` выполняет:
+
+1. Проверка `project` и project-scoped GitHub binding.
+2. Получение PR details/files/diff через GitHub MCP tools.
+3. Retrieval из project-scoped RAG (`topK=10`).
+4. Сбор prompt через `PullRequestReviewPromptBuilder`.
+5. Вызов OpenAI Responses API.
+6. Возврат review в чат.
+7. Публикация review в GitHub PR.
+8. Fallback: если GitHub publish упал, review всё равно возвращается в чат.
+
+Где:
+
+- service: `app/src/main/java/com/example/aiplatform/assistant/PullRequestReviewService.kt`
+- prompt builder: `app/src/main/java/com/example/aiplatform/assistant/PullRequestReviewPromptBuilder.kt`
+- routing: `app/src/main/java/com/example/aiplatform/agent/AgentOrchestrator.kt`
+
+## UI flow
+
+### MCP экран (`McpScreen`)
 
 1. Ввод `owner`
-2. Кнопка `Загрузить репозитории`
-3. Список репозиториев
-4. Выбор одного репозитория
-5. Кнопка `Привязать выбранный repo к проекту`
-6. Кнопка `Импортировать README / Построить RAG`
+2. `Загрузить репозитории`
+3. Выбор репозитория
+4. `Привязать выбранный repo к проекту`
+5. `Импортировать README / Построить RAG`
 
-Состояния UI:
+Состояния:
 
 - `Idle`
 - `LoadingRepos`
@@ -107,11 +150,35 @@ Metadata source для chunk:
 - `Success`
 - `Error`
 
+### Chat экран (`ChatScreen`)
+
+- Для `/review_pr` список PR приходит как assistant message.
+- Для `/review_pr <number>` review приходит как assistant message.
+- В metadata сообщения пишется `reviewCommand` + mode/status.
+
+## GitHub Action (автоматический review на PR)
+
+Workflow:
+
+- `.github/workflows/ai-pr-review.yml`
+
+Trigger:
+
+- `pull_request` (`opened`, `synchronize`, `reopened`)
+- `workflow_dispatch`
+
+Действия:
+
+1. Забирает PR metadata/files/diff из GitHub API.
+2. Формирует review context.
+3. Вызывает OpenAI Responses API.
+4. Публикует comment в PR.
+
 ## Сеть и таймауты
 
 Для OpenAI и GitHub клиентов выставлены таймауты:
 
-- connect/read/write/call: `20 seconds`
+- connect/read/write/call: `180 seconds`
 
 ## Конфигурация секретов
 
@@ -132,22 +199,38 @@ Metadata source для chunk:
 ## Запуск
 
 1. Откройте проект в Android Studio.
-2. Укажите `OPENAI_API_KEY` и (опционально, но желательно) `GITHUB_API_TOKEN`.
+2. Укажите `OPENAI_API_KEY` и `GITHUB_API_TOKEN`.
 3. Sync Gradle.
 4. Запустите `app`.
+
+## Как проверить вручную
+
+1. Откройте проект.
+2. Перейдите в `MCP`.
+3. Подключите GitHub repo (owner -> list repos -> select -> bind).
+4. Нажмите `Импортировать README / Построить RAG`.
+5. Откройте `Chat`.
+6. Выполните `/review_pr`.
+7. Выберите номер и выполните `/review_pr <number>`.
+8. Проверьте:
+   - review появился в чате
+   - review/comment появился в GitHub PR.
 
 ## Тесты
 
 Запуск unit-тестов:
 
 ```bash
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew testDebugUnitTest
+JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :app:testDebugUnitTest
 ```
 
 Ключевые тесты:
 
 - `GithubMcpServerTest`
+- `GithubPrMcpToolsTest`
 - `DeveloperHelpRoutingTest`
+- `PullRequestReviewRoutingTest`
+- `PullRequestReviewServiceTest`
 - `ProjectIsolationTest`
 - `MemoryPolicyTest`
 - `ModelSelectionPerProjectTest`
