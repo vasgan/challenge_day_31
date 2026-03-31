@@ -1,6 +1,8 @@
 package com.example.aiplatform.data.mcp.github
 
 import com.example.aiplatform.data.github.GithubApiGateway
+import com.example.aiplatform.domain.model.GithubPullRequestInlineComment
+import com.example.aiplatform.domain.model.GithubPullRequestReviewRequest
 import com.example.aiplatform.domain.model.ProjectGithubBinding
 import com.example.aiplatform.domain.model.RagDocumentChunk
 import com.example.aiplatform.domain.model.RagIndex
@@ -19,6 +21,11 @@ class GithubToolRegistry(
             GithubMcpTools.GET_BOUND_REPO -> getBoundRepo(call.arguments)
             GithubMcpTools.FETCH_README -> fetchReadme(call.arguments)
             GithubMcpTools.BUILD_RAG_FROM_README -> buildRagFromReadme(call.arguments)
+            GithubMcpTools.LIST_OPEN_PULL_REQUESTS -> listOpenPullRequests(call.arguments)
+            GithubMcpTools.GET_PULL_REQUEST_DETAILS -> getPullRequestDetails(call.arguments)
+            GithubMcpTools.GET_PULL_REQUEST_FILES -> getPullRequestFiles(call.arguments)
+            GithubMcpTools.GET_PULL_REQUEST_DIFF -> getPullRequestDiff(call.arguments)
+            GithubMcpTools.SUBMIT_PULL_REQUEST_REVIEW -> submitPullRequestReview(call.arguments)
             else -> GithubMcpToolResult(success = false, error = "Unknown tool: ${call.tool}")
         }
     }
@@ -87,7 +94,7 @@ class GithubToolRegistry(
         val projectId = arguments["projectId"].orEmpty().trim()
         if (projectId.isBlank()) return GithubMcpToolResult(success = false, error = "projectId is required")
 
-        val binding = projectGithubBindingRepository.getBinding(projectId)
+        val binding = requireProjectBinding(projectId)
             ?: return GithubMcpToolResult(success = false, error = "No GitHub repo bound to project")
 
         val readme = githubApiClient.fetchReadme(binding.owner, binding.repo)
@@ -140,6 +147,124 @@ class GithubToolRegistry(
                 chunkCount = chunks.size
             )
         )
+    }
+
+    private suspend fun listOpenPullRequests(arguments: Map<String, String>): GithubMcpToolResult {
+        val projectId = arguments["projectId"].orEmpty().trim()
+        if (projectId.isBlank()) return GithubMcpToolResult(success = false, error = "projectId is required")
+        val binding = requireProjectBinding(projectId)
+            ?: return GithubMcpToolResult(success = false, error = "No GitHub repo bound to project")
+
+        val prs = githubApiClient.listOpenPullRequests(binding.owner, binding.repo)
+            .getOrElse { throwable ->
+                return GithubMcpToolResult(success = false, error = throwable.message ?: "Failed to list pull requests")
+            }
+
+        return GithubMcpToolResult(
+            success = true,
+            data = GithubMcpToolData.PullRequestList(projectId = projectId, pullRequests = prs)
+        )
+    }
+
+    private suspend fun getPullRequestDetails(arguments: Map<String, String>): GithubMcpToolResult {
+        val projectId = arguments["projectId"].orEmpty().trim()
+        if (projectId.isBlank()) return GithubMcpToolResult(success = false, error = "projectId is required")
+        val prNumber = arguments["prNumber"].orEmpty().trim().toIntOrNull()
+            ?: return GithubMcpToolResult(success = false, error = "Valid prNumber is required")
+        val binding = requireProjectBinding(projectId)
+            ?: return GithubMcpToolResult(success = false, error = "No GitHub repo bound to project")
+
+        val details = githubApiClient.getPullRequest(binding.owner, binding.repo, prNumber)
+            .getOrElse { throwable ->
+                return GithubMcpToolResult(success = false, error = throwable.message ?: "Failed to get pull request")
+            }
+
+        return GithubMcpToolResult(
+            success = true,
+            data = GithubMcpToolData.PullRequestDetailsPayload(details = details)
+        )
+    }
+
+    private suspend fun getPullRequestFiles(arguments: Map<String, String>): GithubMcpToolResult {
+        val projectId = arguments["projectId"].orEmpty().trim()
+        if (projectId.isBlank()) return GithubMcpToolResult(success = false, error = "projectId is required")
+        val prNumber = arguments["prNumber"].orEmpty().trim().toIntOrNull()
+            ?: return GithubMcpToolResult(success = false, error = "Valid prNumber is required")
+        val binding = requireProjectBinding(projectId)
+            ?: return GithubMcpToolResult(success = false, error = "No GitHub repo bound to project")
+
+        val files = githubApiClient.listPullRequestFiles(binding.owner, binding.repo, prNumber)
+            .getOrElse { throwable ->
+                return GithubMcpToolResult(success = false, error = throwable.message ?: "Failed to list pull request files")
+            }
+
+        return GithubMcpToolResult(
+            success = true,
+            data = GithubMcpToolData.PullRequestFilesPayload(files = files)
+        )
+    }
+
+    private suspend fun getPullRequestDiff(arguments: Map<String, String>): GithubMcpToolResult {
+        val projectId = arguments["projectId"].orEmpty().trim()
+        if (projectId.isBlank()) return GithubMcpToolResult(success = false, error = "projectId is required")
+        val prNumber = arguments["prNumber"].orEmpty().trim().toIntOrNull()
+            ?: return GithubMcpToolResult(success = false, error = "Valid prNumber is required")
+        val binding = requireProjectBinding(projectId)
+            ?: return GithubMcpToolResult(success = false, error = "No GitHub repo bound to project")
+
+        val diff = githubApiClient.getPullRequestDiff(binding.owner, binding.repo, prNumber)
+            .getOrElse { throwable ->
+                return GithubMcpToolResult(success = false, error = throwable.message ?: "Failed to fetch pull request diff")
+            }
+
+        return GithubMcpToolResult(
+            success = true,
+            data = GithubMcpToolData.PullRequestDiffPayload(diff = diff)
+        )
+    }
+
+    private suspend fun submitPullRequestReview(arguments: Map<String, String>): GithubMcpToolResult {
+        val projectId = arguments["projectId"].orEmpty().trim()
+        val prNumber = arguments["prNumber"].orEmpty().trim().toIntOrNull()
+            ?: return GithubMcpToolResult(success = false, error = "Valid prNumber is required")
+        val body = arguments["body"].orEmpty().trim()
+        if (projectId.isBlank() || body.isBlank()) {
+            return GithubMcpToolResult(success = false, error = "projectId and body are required")
+        }
+        val binding = requireProjectBinding(projectId)
+            ?: return GithubMcpToolResult(success = false, error = "No GitHub repo bound to project")
+
+        val commentsCount = arguments["commentsCount"].orEmpty().toIntOrNull() ?: 0
+        val comments = (0 until commentsCount).mapNotNull { index ->
+            val path = arguments["comment${index}_path"].orEmpty().trim()
+            val line = arguments["comment${index}_line"].orEmpty().toIntOrNull()
+            val side = arguments["comment${index}_side"].orEmpty().trim().ifBlank { "RIGHT" }
+            val commentBody = arguments["comment${index}_body"].orEmpty().trim()
+            if (path.isBlank() || line == null || line <= 0 || commentBody.isBlank()) {
+                null
+            } else {
+                GithubPullRequestInlineComment(path = path, line = line, side = side, body = commentBody)
+            }
+        }
+
+        val reviewResult = githubApiClient.submitPullRequestReview(
+            owner = binding.owner,
+            repo = binding.repo,
+            prNumber = prNumber,
+            request = GithubPullRequestReviewRequest(body = body, comments = comments)
+        ).getOrElse { throwable ->
+            return GithubMcpToolResult(success = false, error = throwable.message ?: "Failed to submit pull request review")
+        }
+
+        return GithubMcpToolResult(
+            success = true,
+            data = GithubMcpToolData.PullRequestReviewPayload(result = reviewResult)
+        )
+    }
+
+    private suspend fun requireProjectBinding(projectId: String): ProjectGithubBinding? {
+        if (projectId.isBlank()) return null
+        return projectGithubBindingRepository.getBinding(projectId)
     }
 
     private fun chunkReadme(readme: com.example.aiplatform.domain.model.GithubReadme): List<RagDocumentChunk> {

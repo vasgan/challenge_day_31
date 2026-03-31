@@ -31,3 +31,60 @@ data class GithubApiErrorDto(
     val message: String? = null,
     @SerialName("documentation_url") val documentationUrl: String? = null
 )
+
+@Serializable
+data class GithubPullRequestSummaryDto(
+    val number: Int,
+    val title: String,
+    val user: GithubOwnerDto,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("html_url") val htmlUrl: String
+)
+
+@Serializable
+data class GithubPullRequestBranchRefDto(
+    val label: String? = null,
+    val ref: String
+)
+
+@Serializable
+data class GithubPullRequestDetailsDto(
+    val number: Int,
+    val title: String,
+    val body: String? = null,
+    val user: GithubOwnerDto,
+    val base: GithubPullRequestBranchRefDto,
+    val head: GithubPullRequestBranchRefDto,
+    @SerialName("html_url") val htmlUrl: String
+)
+
+@Serializable
+data class GithubPullRequestFileDto(
+    val filename: String,
+    val status: String,
+    val additions: Int,
+    val deletions: Int,
+    val patch: String? = null
+)
+
+@Serializable
+data class GithubSubmitReviewCommentDto(
+    val path: String,
+    val line: Int,
+    val side: String,
+    val body: String
+)
+
+@Serializable
+data class GithubSubmitReviewRequestDto(
+    val body: String,
+    val event: String = "COMMENT",
+    val comments: List<GithubSubmitReviewCommentDto> = emptyList()
+)
+
+@Serializable
+data class GithubPullRequestReviewResponseDto(
+    val id: Long,
+    @SerialName("html_url") val htmlUrl: String,
+    val state: String? = null
+)

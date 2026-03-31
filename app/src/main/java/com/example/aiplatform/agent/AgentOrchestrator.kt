@@ -1,6 +1,9 @@
 package com.example.aiplatform.agent
 
 import com.example.aiplatform.assistant.DeveloperAssistantHandler
+import com.example.aiplatform.assistant.PullRequestListResult
+import com.example.aiplatform.assistant.PullRequestReviewExecutionResult
+import com.example.aiplatform.assistant.PullRequestReviewHandler
 import com.example.aiplatform.domain.agent.AgentContext
 import com.example.aiplatform.domain.agent.AgentResult
 import com.example.aiplatform.domain.model.Message
@@ -24,7 +27,8 @@ class AgentOrchestrator(
     private val ragAgent: RagAgent,
     private val mcpAgent: McpAgent,
     private val memoryAgent: MemoryAgent,
-    private val developerAssistantHandler: DeveloperAssistantHandler
+    private val developerAssistantHandler: DeveloperAssistantHandler,
+    private val pullRequestReviewHandler: PullRequestReviewHandler
 ) {
 
     suspend fun sendMessage(projectId: String, chatId: String, userInput: String): AgentResult {
@@ -44,8 +48,80 @@ class AgentOrchestrator(
             )
         )
 
-        if (userInput.trim().startsWith("/help")) {
-            val helpQuestion = userInput.trim().removePrefix("/help").trim()
+        val trimmedInput = userInput.trim()
+
+        if (trimmedInput == "/review_pr") {
+            val result = runCatching {
+                pullRequestReviewHandler.listOpenPrs(projectId)
+            }.getOrElse { throwable ->
+                PullRequestListResult(
+                    answer = "Ошибка PR review: ${throwable.message ?: "unknown"}",
+                    success = false
+                )
+            }
+            chatRepository.addMessage(
+                Message(
+                    id = UUID.randomUUID().toString(),
+                    chatId = chatId,
+                    role = MessageRole.ASSISTANT,
+                    content = result.answer,
+                    metadata = "{\"reviewCommand\":true,\"mode\":\"list\",\"success\":${result.success}}",
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            return AgentResult(
+                answer = result.answer,
+                usedRag = false,
+                usedMcp = true
+            )
+        }
+
+        if (trimmedInput.startsWith("/review_pr ")) {
+            val prNumber = trimmedInput.removePrefix("/review_pr").trim().toIntOrNull()
+            if (prNumber == null) {
+                val answer = "Неверный формат. Используйте /review_pr <number>"
+                chatRepository.addMessage(
+                    Message(
+                        id = UUID.randomUUID().toString(),
+                        chatId = chatId,
+                        role = MessageRole.ASSISTANT,
+                        content = answer,
+                        metadata = "{\"reviewCommand\":true,\"mode\":\"run\",\"prNumber\":-1,\"postedToGithub\":false,\"usedRag\":false,\"usedMcp\":false}",
+                        createdAt = System.currentTimeMillis()
+                    )
+                )
+                return AgentResult(answer = answer, usedRag = false, usedMcp = false)
+            }
+
+            val safeResult = runCatching {
+                pullRequestReviewHandler.reviewPr(projectId, chatId, prNumber)
+            }.getOrElse { throwable ->
+                PullRequestReviewExecutionResult(
+                    answer = "Ошибка PR review: ${throwable.message ?: "unknown"}",
+                    usedRag = false,
+                    usedMcp = false,
+                    postedToGithub = false
+                )
+            }
+            chatRepository.addMessage(
+                Message(
+                    id = UUID.randomUUID().toString(),
+                    chatId = chatId,
+                    role = MessageRole.ASSISTANT,
+                    content = safeResult.answer,
+                    metadata = "{\"reviewCommand\":true,\"mode\":\"run\",\"prNumber\":$prNumber,\"postedToGithub\":${safeResult.postedToGithub},\"usedRag\":${safeResult.usedRag},\"usedMcp\":${safeResult.usedMcp}}",
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            return AgentResult(
+                answer = safeResult.answer,
+                usedRag = safeResult.usedRag,
+                usedMcp = safeResult.usedMcp
+            )
+        }
+
+        if (trimmedInput.startsWith("/help")) {
+            val helpQuestion = trimmedInput.removePrefix("/help").trim()
             val helpResult = developerAssistantHandler.handleHelp(projectId, chatId, helpQuestion)
             chatRepository.addMessage(
                 Message(

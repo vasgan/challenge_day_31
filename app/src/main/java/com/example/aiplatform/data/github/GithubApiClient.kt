@@ -3,8 +3,19 @@ package com.example.aiplatform.data.github
 import com.example.aiplatform.core.network.GithubApiErrorDto
 import com.example.aiplatform.core.network.GithubApiService
 import com.example.aiplatform.core.network.GithubContentDto
+import com.example.aiplatform.core.network.GithubPullRequestDetailsDto
+import com.example.aiplatform.core.network.GithubPullRequestFileDto
+import com.example.aiplatform.core.network.GithubPullRequestSummaryDto
 import com.example.aiplatform.core.network.GithubRepoDto
+import com.example.aiplatform.core.network.GithubSubmitReviewCommentDto
+import com.example.aiplatform.core.network.GithubSubmitReviewRequestDto
 import com.example.aiplatform.domain.model.GithubReadme
+import com.example.aiplatform.domain.model.GithubPullRequestDetails
+import com.example.aiplatform.domain.model.GithubPullRequestDiff
+import com.example.aiplatform.domain.model.GithubPullRequestFile
+import com.example.aiplatform.domain.model.GithubPullRequestReviewRequest
+import com.example.aiplatform.domain.model.GithubPullRequestReviewResult
+import com.example.aiplatform.domain.model.GithubPullRequestSummary
 import com.example.aiplatform.domain.model.GithubRepo
 import java.io.IOException
 import java.util.Base64
@@ -15,6 +26,16 @@ interface GithubApiGateway {
     suspend fun listUserRepos(owner: String): Result<List<GithubRepo>>
     suspend fun getRepo(owner: String, repo: String): Result<GithubRepo>
     suspend fun fetchReadme(owner: String, repo: String): Result<GithubReadme>
+    suspend fun listOpenPullRequests(owner: String, repo: String): Result<List<GithubPullRequestSummary>>
+    suspend fun getPullRequest(owner: String, repo: String, prNumber: Int): Result<GithubPullRequestDetails>
+    suspend fun listPullRequestFiles(owner: String, repo: String, prNumber: Int): Result<List<GithubPullRequestFile>>
+    suspend fun getPullRequestDiff(owner: String, repo: String, prNumber: Int): Result<GithubPullRequestDiff>
+    suspend fun submitPullRequestReview(
+        owner: String,
+        repo: String,
+        prNumber: Int,
+        request: GithubPullRequestReviewRequest
+    ): Result<GithubPullRequestReviewResult>
 }
 
 class GithubApiClient(
@@ -56,6 +77,81 @@ class GithubApiClient(
                 text = text
             )
         )
+    }
+
+    override suspend fun listOpenPullRequests(owner: String, repo: String): Result<List<GithubPullRequestSummary>> {
+        if (owner.isBlank() || repo.isBlank()) {
+            return Result.failure(IllegalArgumentException("Owner or repo is empty"))
+        }
+        return safeCall {
+            service.listOpenPullRequests(owner.trim(), repo.trim())
+                .map { it.toDomain() }
+                .sortedByDescending { it.updatedAt }
+        }
+    }
+
+    override suspend fun getPullRequest(owner: String, repo: String, prNumber: Int): Result<GithubPullRequestDetails> {
+        if (owner.isBlank() || repo.isBlank() || prNumber <= 0) {
+            return Result.failure(IllegalArgumentException("Invalid pull request lookup arguments"))
+        }
+        return safeCall {
+            service.getPullRequest(owner.trim(), repo.trim(), prNumber).toDomain()
+        }
+    }
+
+    override suspend fun listPullRequestFiles(owner: String, repo: String, prNumber: Int): Result<List<GithubPullRequestFile>> {
+        if (owner.isBlank() || repo.isBlank() || prNumber <= 0) {
+            return Result.failure(IllegalArgumentException("Invalid pull request files arguments"))
+        }
+        return safeCall {
+            service.listPullRequestFiles(owner.trim(), repo.trim(), prNumber).map { it.toDomain() }
+        }
+    }
+
+    override suspend fun getPullRequestDiff(owner: String, repo: String, prNumber: Int): Result<GithubPullRequestDiff> {
+        if (owner.isBlank() || repo.isBlank() || prNumber <= 0) {
+            return Result.failure(IllegalArgumentException("Invalid pull request diff arguments"))
+        }
+        return safeCall {
+            val diffText = service.getPullRequestDiff(owner.trim(), repo.trim(), prNumber).use { body ->
+                body.string()
+            }
+            GithubPullRequestDiff(diff = diffText)
+        }
+    }
+
+    override suspend fun submitPullRequestReview(
+        owner: String,
+        repo: String,
+        prNumber: Int,
+        request: GithubPullRequestReviewRequest
+    ): Result<GithubPullRequestReviewResult> {
+        if (owner.isBlank() || repo.isBlank() || prNumber <= 0) {
+            return Result.failure(IllegalArgumentException("Invalid pull request review arguments"))
+        }
+        if (request.body.isBlank()) {
+            return Result.failure(IllegalArgumentException("Review body is empty"))
+        }
+        return safeCall {
+            val dto = GithubSubmitReviewRequestDto(
+                body = request.body,
+                event = "COMMENT",
+                comments = request.comments.map { comment ->
+                    GithubSubmitReviewCommentDto(
+                        path = comment.path,
+                        line = comment.line,
+                        side = comment.side,
+                        body = comment.body
+                    )
+                }
+            )
+            val response = service.submitPullRequestReview(owner.trim(), repo.trim(), prNumber, dto)
+            GithubPullRequestReviewResult(
+                reviewId = response.id.toString(),
+                htmlUrl = response.htmlUrl,
+                submitted = true
+            )
+        }
     }
 
     private suspend fun findReadme(owner: String, repo: String): Result<GithubContentDto> {
@@ -116,4 +212,30 @@ private fun GithubRepoDto.toDomain(): GithubRepo = GithubRepo(
     fullName = fullName,
     htmlUrl = htmlUrl,
     defaultBranch = defaultBranch
+)
+
+private fun GithubPullRequestSummaryDto.toDomain(): GithubPullRequestSummary = GithubPullRequestSummary(
+    number = number,
+    title = title,
+    author = user.login,
+    updatedAt = updatedAt,
+    htmlUrl = htmlUrl
+)
+
+private fun GithubPullRequestDetailsDto.toDomain(): GithubPullRequestDetails = GithubPullRequestDetails(
+    number = number,
+    title = title,
+    body = body.orEmpty(),
+    baseBranch = base.ref,
+    headBranch = head.ref,
+    author = user.login,
+    htmlUrl = htmlUrl
+)
+
+private fun GithubPullRequestFileDto.toDomain(): GithubPullRequestFile = GithubPullRequestFile(
+    filename = filename,
+    status = status,
+    additions = additions,
+    deletions = deletions,
+    patch = patch
 )
