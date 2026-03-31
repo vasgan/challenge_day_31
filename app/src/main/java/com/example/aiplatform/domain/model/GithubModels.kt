@@ -26,3 +26,51 @@ data class ProjectGithubBinding(
     val ragIndexId: String?,
     val createdAt: Long
 )
+
+data class GithubPullRequestSummary(
+    val number: Int,
+    val title: String,
+    val author: String,
+    val updatedAt: String,
+    val htmlUrl: String
+)
+
+data class GithubPullRequestDetails(
+    val number: Int,
+    val title: String,
+    val body: String,
+    val baseBranch: String,
+    val headBranch: String,
+    val author: String,
+    val htmlUrl: String
+)
+
+data class GithubPullRequestFile(
+    val filename: String,
+    val status: String,
+    val additions: Int,
+    val deletions: Int,
+    val patch: String?
+)
+
+data class GithubPullRequestDiff(
+    val diff: String
+)
+
+data class GithubPullRequestInlineComment(
+    val path: String,
+    val line: Int,
+    val body: String,
+    val side: String = "RIGHT"
+)
+
+data class GithubPullRequestReviewRequest(
+    val body: String,
+    val comments: List<GithubPullRequestInlineComment>
+)
+
+data class GithubPullRequestReviewResult(
+    val reviewId: String,
+    val htmlUrl: String,
+    val submitted: Boolean
+)

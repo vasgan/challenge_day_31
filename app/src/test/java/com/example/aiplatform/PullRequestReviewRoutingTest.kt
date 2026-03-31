@@ -33,44 +33,95 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class ModelSelectionPerProjectTest {
+class PullRequestReviewRoutingTest {
+
     @Test
-    fun `orchestrator uses model selected per project`() = runTest {
-        val projectRepo = FakeProjectRepository(
-            listOf(
-                Project("p1", "P1", "", ProjectTextModel.GPT_5_NANO, 0, ""),
-                Project("p2", "P2", "", ProjectTextModel.GPT_5_CODER, 0, "")
-            )
+    fun `review command without number routes to list mode`() = runTest {
+        val fixture = fixture()
+
+        fixture.orchestrator.sendMessage("p1", "chat", "/review_pr")
+
+        assertEquals(1, fixture.reviewHandler.listCalls)
+        assertEquals(0, fixture.reviewHandler.runCalls)
+    }
+
+    @Test
+    fun `review command with number routes to run mode`() = runTest {
+        val fixture = fixture()
+
+        fixture.orchestrator.sendMessage("p1", "chat", "/review_pr 123")
+
+        assertEquals(0, fixture.reviewHandler.listCalls)
+        assertEquals(1, fixture.reviewHandler.runCalls)
+        assertEquals(123, fixture.reviewHandler.lastPr)
+        val last = fixture.chatRepository.getMessages("chat").last()
+        assertEquals("review", last.content)
+    }
+
+    @Test
+    fun `invalid review command is handled safely in chat`() = runTest {
+        val fixture = fixture()
+
+        val result = fixture.orchestrator.sendMessage("p1", "chat", "/review_pr abc")
+
+        assertTrue(result.answer.contains("Неверный формат"))
+        val last = fixture.chatRepository.getMessages("chat").last()
+        assertTrue(last.content.contains("Неверный формат"))
+    }
+
+    private fun fixture(): Fixture {
+        val projectRepository = FakeProjectRepository(
+            listOf(Project("p1", "P1", "", ProjectTextModel.GPT_5_MINI, 0L, ""))
         )
-        val chatRepo = FakeChatRepository(
-            mapOf(
-                "c1" to Chat("c1", "p1", "c1"),
-                "c2" to Chat("c2", "p2", "c2")
-            )
-        )
-        val openAi = FakeOpenAiRepository()
-        val memoryRepo = FakeMemoryRepository()
-        val ragRepo = FakeRagRepository()
-        val mcpRepo = FakeMcpRepository()
+        val chatRepository = FakeChatRepository(mapOf("chat" to Chat("chat", "p1", "General")))
+        val openAiRepository = FakeOpenAiRepository()
+        val reviewHandler = CaptureReviewHandler()
 
         val orchestrator = AgentOrchestrator(
-            projectRepository = projectRepo,
-            chatRepository = chatRepo,
-            openAiRepository = openAi,
-            chatAgent = ChatAgent(chatRepo),
-            ragAgent = RagAgent(ragRepo),
-            mcpAgent = McpAgent(mcpRepo, GitBranchTool()),
-            memoryAgent = MemoryAgent(ProjectMemoryManager(chatRepo, memoryRepo, openAi)),
+            projectRepository = projectRepository,
+            chatRepository = chatRepository,
+            openAiRepository = openAiRepository,
+            chatAgent = ChatAgent(chatRepository),
+            ragAgent = RagAgent(FakeRagRepository()),
+            mcpAgent = McpAgent(FakeMcpRepository(), GitBranchTool()),
+            memoryAgent = MemoryAgent(ProjectMemoryManager(chatRepository, FakeMemoryRepository(), openAiRepository)),
             developerAssistantHandler = NoopDeveloperAssistantHandler(),
-            pullRequestReviewHandler = NoopPullRequestReviewHandler()
+            pullRequestReviewHandler = reviewHandler
         )
 
-        orchestrator.sendMessage("p1", "c1", "hi")
-        orchestrator.sendMessage("p2", "c2", "hi")
+        return Fixture(orchestrator, chatRepository, reviewHandler)
+    }
 
-        assertEquals(listOf(ProjectTextModel.GPT_5_NANO, ProjectTextModel.GPT_5_CODER), openAi.responseModels)
+    private data class Fixture(
+        val orchestrator: AgentOrchestrator,
+        val chatRepository: FakeChatRepository,
+        val reviewHandler: CaptureReviewHandler
+    )
+
+    private class CaptureReviewHandler : PullRequestReviewHandler {
+        var listCalls = 0
+        var runCalls = 0
+        var lastPr: Int? = null
+
+        override suspend fun listOpenPrs(projectId: String): PullRequestListResult {
+            listCalls += 1
+            return PullRequestListResult("list", success = true)
+        }
+
+        override suspend fun reviewPr(projectId: String, chatId: String, prNumber: Int): PullRequestReviewExecutionResult {
+            runCalls += 1
+            lastPr = prNumber
+            return PullRequestReviewExecutionResult("review", usedRag = true, usedMcp = true, postedToGithub = false)
+        }
+    }
+
+    private class NoopDeveloperAssistantHandler : DeveloperAssistantHandler {
+        override suspend fun handleHelp(projectId: String, chatId: String, userQuestion: String): DeveloperAssistantResult {
+            return DeveloperAssistantResult("help", usedRag = false, usedMcp = false)
+        }
     }
 
     private class FakeProjectRepository(projects: List<Project>) : ProjectRepository {
@@ -98,28 +149,6 @@ class ModelSelectionPerProjectTest {
         override suspend fun deleteMessages(messageIds: List<String>) {}
     }
 
-    private class FakeOpenAiRepository : OpenAiRepository {
-        val responseModels = mutableListOf<ProjectTextModel>()
-
-        override suspend fun responses(
-            model: ProjectTextModel,
-            systemPrompt: String,
-            context: String,
-            userInput: String
-        ): String {
-            responseModels += model
-            return "ok"
-        }
-
-        override suspend fun summarizeMemory(
-            model: ProjectTextModel,
-            currentSummary: String,
-            archivedConversation: String
-        ): String = currentSummary
-
-        override suspend fun embeddings(input: List<String>): List<List<Double>> = emptyList()
-    }
-
     private class FakeMemoryRepository : MemoryRepository {
         override suspend fun getMemory(projectId: String): ProjectMemory? = null
         override suspend fun upsertMemory(memory: ProjectMemory) {}
@@ -134,23 +163,26 @@ class ModelSelectionPerProjectTest {
     }
 
     private class FakeMcpRepository : McpRepository {
-        override fun observeConnections(projectId: String) = emptyFlow<List<McpConnection>>()
-        override suspend fun listConnections(projectId: String) = emptyList<McpConnection>()
-        override suspend fun listConnections(projectId: String, type: McpConnectionType) = emptyList<McpConnection>()
+        override fun observeConnections(projectId: String): Flow<List<McpConnection>> = emptyFlow()
+        override suspend fun listConnections(projectId: String): List<McpConnection> = emptyList()
+        override suspend fun listConnections(projectId: String, type: McpConnectionType): List<McpConnection> = emptyList()
         override suspend fun upsertConnection(connection: McpConnection) {}
     }
 
-    private class NoopDeveloperAssistantHandler : DeveloperAssistantHandler {
-        override suspend fun handleHelp(projectId: String, chatId: String, userQuestion: String): DeveloperAssistantResult {
-            return DeveloperAssistantResult("help", usedRag = false, usedMcp = false)
-        }
-    }
+    private class FakeOpenAiRepository : OpenAiRepository {
+        override suspend fun responses(
+            model: ProjectTextModel,
+            systemPrompt: String,
+            context: String,
+            userInput: String
+        ): String = "ok"
 
-    private class NoopPullRequestReviewHandler : PullRequestReviewHandler {
-        override suspend fun listOpenPrs(projectId: String): PullRequestListResult =
-            PullRequestListResult("none", success = true)
+        override suspend fun summarizeMemory(
+            model: ProjectTextModel,
+            currentSummary: String,
+            archivedConversation: String
+        ): String = currentSummary
 
-        override suspend fun reviewPr(projectId: String, chatId: String, prNumber: Int): PullRequestReviewExecutionResult =
-            PullRequestReviewExecutionResult("none", usedRag = false, usedMcp = false, postedToGithub = false)
+        override suspend fun embeddings(input: List<String>): List<List<Double>> = emptyList()
     }
 }

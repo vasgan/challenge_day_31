@@ -7,6 +7,9 @@ import com.example.aiplatform.agent.MemoryAgent
 import com.example.aiplatform.agent.RagAgent
 import com.example.aiplatform.assistant.DeveloperAssistantHandler
 import com.example.aiplatform.assistant.DeveloperAssistantResult
+import com.example.aiplatform.assistant.PullRequestListResult
+import com.example.aiplatform.assistant.PullRequestReviewExecutionResult
+import com.example.aiplatform.assistant.PullRequestReviewHandler
 import com.example.aiplatform.data.mcp.GitBranchTool
 import com.example.aiplatform.data.memory.ProjectMemoryManager
 import com.example.aiplatform.domain.model.Chat
@@ -61,7 +64,8 @@ class ProjectIsolationTest {
             ragAgent = RagAgent(FakeRagRepository()),
             mcpAgent = McpAgent(FakeMcpRepository(), GitBranchTool()),
             memoryAgent = MemoryAgent(ProjectMemoryManager(chatRepo, FakeMemoryRepository(), openAi)),
-            developerAssistantHandler = NoopDeveloperAssistantHandler()
+            developerAssistantHandler = NoopDeveloperAssistantHandler(),
+            pullRequestReviewHandler = NoopPullRequestReviewHandler()
         )
 
         orchestrator.sendMessage("p1", "c1", "new")
@@ -140,5 +144,13 @@ class ProjectIsolationTest {
         override suspend fun handleHelp(projectId: String, chatId: String, userQuestion: String): DeveloperAssistantResult {
             return DeveloperAssistantResult("help", false, false)
         }
+    }
+
+    private class NoopPullRequestReviewHandler : PullRequestReviewHandler {
+        override suspend fun listOpenPrs(projectId: String): PullRequestListResult =
+            PullRequestListResult("none", success = true)
+
+        override suspend fun reviewPr(projectId: String, chatId: String, prNumber: Int): PullRequestReviewExecutionResult =
+            PullRequestReviewExecutionResult("none", usedRag = false, usedMcp = false, postedToGithub = false)
     }
 }

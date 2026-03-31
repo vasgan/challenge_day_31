@@ -9,6 +9,9 @@ import com.example.aiplatform.assistant.DeveloperAssistantHandler
 import com.example.aiplatform.assistant.DeveloperAssistantPromptBuilder
 import com.example.aiplatform.assistant.DeveloperAssistantResult
 import com.example.aiplatform.assistant.DeveloperAssistantService
+import com.example.aiplatform.assistant.PullRequestListResult
+import com.example.aiplatform.assistant.PullRequestReviewExecutionResult
+import com.example.aiplatform.assistant.PullRequestReviewHandler
 import com.example.aiplatform.data.mcp.GitBranchTool
 import com.example.aiplatform.data.memory.ProjectMemoryManager
 import com.example.aiplatform.domain.model.Chat
@@ -56,7 +59,8 @@ class DeveloperHelpRoutingTest {
             ragAgent = RagAgent(FakeRagRepository()),
             mcpAgent = McpAgent(FakeMcpRepository(), GitBranchTool()),
             memoryAgent = MemoryAgent(ProjectMemoryManager(chatRepo, FakeMemoryRepository(), openAi)),
-            developerAssistantHandler = helpHandler
+            developerAssistantHandler = helpHandler,
+            pullRequestReviewHandler = NoopPullRequestReviewHandler()
         )
 
         val result = orchestrator.sendMessage("p1", "c1", "/help как устроен проект?")
@@ -64,6 +68,14 @@ class DeveloperHelpRoutingTest {
         assertEquals("help-answer", result.answer)
         assertEquals(1, helpHandler.calls)
         assertEquals(0, openAi.responsesCalls)
+    }
+
+    private class NoopPullRequestReviewHandler : PullRequestReviewHandler {
+        override suspend fun listOpenPrs(projectId: String): PullRequestListResult =
+            PullRequestListResult("none", success = true)
+
+        override suspend fun reviewPr(projectId: String, chatId: String, prNumber: Int): PullRequestReviewExecutionResult =
+            PullRequestReviewExecutionResult("none", usedRag = false, usedMcp = false, postedToGithub = false)
     }
 
     @Test

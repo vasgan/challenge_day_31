@@ -5,6 +5,12 @@ import com.example.aiplatform.data.mcp.github.GithubMcpServer
 import com.example.aiplatform.data.mcp.github.GithubMcpToolExecutorImpl
 import com.example.aiplatform.data.mcp.github.GithubToolRegistry
 import com.example.aiplatform.domain.model.GithubReadme
+import com.example.aiplatform.domain.model.GithubPullRequestDetails
+import com.example.aiplatform.domain.model.GithubPullRequestDiff
+import com.example.aiplatform.domain.model.GithubPullRequestFile
+import com.example.aiplatform.domain.model.GithubPullRequestReviewRequest
+import com.example.aiplatform.domain.model.GithubPullRequestReviewResult
+import com.example.aiplatform.domain.model.GithubPullRequestSummary
 import com.example.aiplatform.domain.model.GithubRepo
 import com.example.aiplatform.domain.model.ProjectGithubBinding
 import com.example.aiplatform.domain.model.RagChunk
@@ -183,6 +189,25 @@ class GithubMcpServerTest {
             return readmeByKey["$owner/$repo"]?.let { Result.success(it) }
                 ?: Result.failure(IllegalStateException("README not found"))
         }
+
+        override suspend fun listOpenPullRequests(owner: String, repo: String): Result<List<GithubPullRequestSummary>> =
+            Result.success(emptyList())
+
+        override suspend fun getPullRequest(owner: String, repo: String, prNumber: Int): Result<GithubPullRequestDetails> =
+            Result.failure(IllegalStateException("not implemented"))
+
+        override suspend fun listPullRequestFiles(owner: String, repo: String, prNumber: Int): Result<List<GithubPullRequestFile>> =
+            Result.failure(IllegalStateException("not implemented"))
+
+        override suspend fun getPullRequestDiff(owner: String, repo: String, prNumber: Int): Result<GithubPullRequestDiff> =
+            Result.failure(IllegalStateException("not implemented"))
+
+        override suspend fun submitPullRequestReview(
+            owner: String,
+            repo: String,
+            prNumber: Int,
+            request: GithubPullRequestReviewRequest
+        ): Result<GithubPullRequestReviewResult> = Result.failure(IllegalStateException("not implemented"))
     }
 
     private class FakeProjectGithubBindingRepository : ProjectGithubBindingRepository {

@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Room
 import com.example.aiplatform.assistant.DeveloperAssistantPromptBuilder
 import com.example.aiplatform.assistant.DeveloperAssistantService
+import com.example.aiplatform.assistant.PullRequestReviewPromptBuilder
+import com.example.aiplatform.assistant.PullRequestReviewService
 import com.example.aiplatform.agent.AgentOrchestrator
 import com.example.aiplatform.agent.ChatAgent
 import com.example.aiplatform.agent.McpAgent
@@ -75,6 +77,16 @@ class AppContainer(context: Context) {
         openAiRepository = openAiRepository,
         promptBuilder = DeveloperAssistantPromptBuilder()
     )
+    private val pullRequestReviewService = PullRequestReviewService(
+        projectRepository = projectRepository,
+        chatRepository = chatRepository,
+        memoryRepository = memoryRepository,
+        ragRepository = ragRepository,
+        projectGithubBindingRepository = projectGithubBindingRepository,
+        openAiRepository = openAiRepository,
+        githubMcpServer = githubMcpServer,
+        promptBuilder = PullRequestReviewPromptBuilder()
+    )
 
     private val chatAgent = ChatAgent(chatRepository)
     private val ragAgent = RagAgent(ragRepository)
@@ -89,6 +101,7 @@ class AppContainer(context: Context) {
         ragAgent = ragAgent,
         mcpAgent = mcpAgent,
         memoryAgent = memoryAgent,
-        developerAssistantHandler = developerAssistantService
+        developerAssistantHandler = developerAssistantService,
+        pullRequestReviewHandler = pullRequestReviewService
     )
 }
