@@ -48,7 +48,8 @@ data class McpConnection(
 enum class McpConnectionType {
     GENERIC,
     GIT,
-    GITHUB
+    GITHUB,
+    SUPPORT
 }
 
 data class RagIndex(

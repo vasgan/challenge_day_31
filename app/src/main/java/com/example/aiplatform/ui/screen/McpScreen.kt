@@ -29,6 +29,7 @@ import com.example.aiplatform.ui.viewmodel.McpViewModel
 fun McpScreen(viewModel: McpViewModel) {
     val connections by viewModel.connections.collectAsState()
     val githubState by viewModel.githubUiState.collectAsState()
+    val supportState by viewModel.supportUiState.collectAsState()
     var genericUrl by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
 
@@ -101,6 +102,32 @@ fun McpScreen(viewModel: McpViewModel) {
 
         Button(onClick = { viewModel.importReadmeAndBuildRag() }) {
             Text("Импортировать README / Построить RAG")
+        }
+
+        Text("Support MCP", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { viewModel.connectSupportMcp() }) {
+                Text("Подключить Support MCP")
+            }
+            Button(onClick = { viewModel.loadSupportSnapshot() }) {
+                Text("Обновить snapshot")
+            }
+        }
+        Text("Support status: ${supportState.status.name}")
+        if (supportState.message.isNotBlank()) {
+            Text("Info: ${supportState.message}")
+        }
+        if (supportState.error.isNotBlank()) {
+            Text("Error: ${supportState.error}")
+        }
+        if (supportState.isConnected) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Support MCP connected")
+                    Text("Users: ${supportState.usersCount}")
+                    Text("Tickets: ${supportState.ticketsCount}")
+                }
+            }
         }
 
         Text("Generic MCP", style = MaterialTheme.typography.titleMedium)

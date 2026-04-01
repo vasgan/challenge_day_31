@@ -3,6 +3,7 @@ package com.example.aiplatform.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.aiplatform.data.mcp.github.GithubMcpServer
+import com.example.aiplatform.data.mcp.support.SupportMcpServer
 import com.example.aiplatform.domain.model.GithubRepo
 import com.example.aiplatform.domain.model.McpConnection
 import com.example.aiplatform.domain.model.McpConnectionType
@@ -38,11 +39,29 @@ data class GithubMcpUiState(
     val error: String = ""
 )
 
+enum class SupportMcpUiStatus {
+    Idle,
+    Connecting,
+    LoadingSnapshot,
+    Success,
+    Error
+}
+
+data class SupportMcpUiState(
+    val status: SupportMcpUiStatus = SupportMcpUiStatus.Idle,
+    val isConnected: Boolean = false,
+    val usersCount: Int = 0,
+    val ticketsCount: Int = 0,
+    val message: String = "",
+    val error: String = ""
+)
+
 class McpViewModel(
     private val projectId: String,
     private val mcpRepository: McpRepository,
     private val projectRepository: ProjectRepository,
-    private val githubMcpServer: GithubMcpServer
+    private val githubMcpServer: GithubMcpServer,
+    private val supportMcpServer: SupportMcpServer
 ) : ViewModel() {
     val connections: StateFlow<List<McpConnection>> = mcpRepository.observeConnections(projectId).stateIn(
         scope = viewModelScope,
@@ -51,6 +70,8 @@ class McpViewModel(
     )
     private val _githubUiState = MutableStateFlow(GithubMcpUiState())
     val githubUiState: StateFlow<GithubMcpUiState> = _githubUiState.asStateFlow()
+    private val _supportUiState = MutableStateFlow(SupportMcpUiState())
+    val supportUiState: StateFlow<SupportMcpUiState> = _supportUiState.asStateFlow()
 
     init {
         refreshBinding()
@@ -205,5 +226,82 @@ class McpViewModel(
             val binding = githubMcpServer.githubGetBoundRepo(projectId).getOrNull()
             _githubUiState.value = _githubUiState.value.copy(binding = binding)
         }
+    }
+
+    fun connectSupportMcp() {
+        viewModelScope.launch {
+            _supportUiState.value = _supportUiState.value.copy(
+                status = SupportMcpUiStatus.Connecting,
+                error = "",
+                message = ""
+            )
+
+            val project = projectRepository.getProject(projectId)
+            if (project == null) {
+                _supportUiState.value = _supportUiState.value.copy(
+                    status = SupportMcpUiStatus.Error,
+                    error = "Проект не найден"
+                )
+                return@launch
+            }
+
+            val projectPath = project.rootPath.trim().ifBlank { "assets://support" }
+
+            mcpRepository.upsertConnection(
+                McpConnection(
+                    id = "support-mcp-$projectId",
+                    projectId = projectId,
+                    name = "Support MCP",
+                    serverUrl = "mcp://internal/support",
+                    projectPath = projectPath,
+                    connectionType = McpConnectionType.SUPPORT
+                )
+            )
+
+            loadSupportSnapshotInternal(connected = true)
+        }
+    }
+
+    fun loadSupportSnapshot() {
+        viewModelScope.launch {
+            loadSupportSnapshotInternal(connected = _supportUiState.value.isConnected)
+        }
+    }
+    /support_user u-1001
+    /support_ticket t-2001
+    /support Почему не работает авторизация?
+
+    private suspend fun loadSupportSnapshotInternal(connected: Boolean) {
+        _supportUiState.value = _supportUiState.value.copy(
+            status = SupportMcpUiStatus.LoadingSnapshot,
+            error = "",
+            message = ""
+        )
+
+        val users = supportMcpServer.supportListUsers(projectId).getOrElse { throwable ->
+            _supportUiState.value = _supportUiState.value.copy(
+                status = SupportMcpUiStatus.Error,
+                isConnected = connected,
+                error = throwable.message ?: "Не удалось загрузить users"
+            )
+            return
+        }
+        val tickets = supportMcpServer.supportListTickets(projectId).getOrElse { throwable ->
+            _supportUiState.value = _supportUiState.value.copy(
+                status = SupportMcpUiStatus.Error,
+                isConnected = connected,
+                error = throwable.message ?: "Не удалось загрузить tickets"
+            )
+            return
+        }
+
+        _supportUiState.value = _supportUiState.value.copy(
+            status = SupportMcpUiStatus.Success,
+            isConnected = connected,
+            usersCount = users.size,
+            ticketsCount = tickets.size,
+            message = "Support MCP ready: users=${users.size}, tickets=${tickets.size}",
+            error = ""
+        )
     }
 }

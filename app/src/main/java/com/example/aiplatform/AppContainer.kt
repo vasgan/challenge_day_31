@@ -6,6 +6,9 @@ import com.example.aiplatform.assistant.DeveloperAssistantPromptBuilder
 import com.example.aiplatform.assistant.DeveloperAssistantService
 import com.example.aiplatform.assistant.PullRequestReviewPromptBuilder
 import com.example.aiplatform.assistant.PullRequestReviewService
+import com.example.aiplatform.assistant.SupportAssistantPromptBuilder
+import com.example.aiplatform.assistant.SupportAssistantService
+import com.example.aiplatform.assistant.SupportRagBootstrapper
 import com.example.aiplatform.agent.AgentOrchestrator
 import com.example.aiplatform.agent.ChatAgent
 import com.example.aiplatform.agent.McpAgent
@@ -20,6 +23,9 @@ import com.example.aiplatform.data.mcp.GitBranchTool
 import com.example.aiplatform.data.mcp.github.GithubMcpServer
 import com.example.aiplatform.data.mcp.github.GithubMcpToolExecutorImpl
 import com.example.aiplatform.data.mcp.github.GithubToolRegistry
+import com.example.aiplatform.data.mcp.support.SupportMcpServer
+import com.example.aiplatform.data.mcp.support.SupportMcpToolExecutorImpl
+import com.example.aiplatform.data.mcp.support.SupportToolRegistry
 import com.example.aiplatform.data.memory.ProjectMemoryManager
 import com.example.aiplatform.data.repository.ChatRepositoryImpl
 import com.example.aiplatform.data.repository.McpRepositoryImpl
@@ -28,6 +34,7 @@ import com.example.aiplatform.data.repository.OpenAiRepositoryImpl
 import com.example.aiplatform.data.repository.ProjectGithubBindingRepositoryImpl
 import com.example.aiplatform.data.repository.ProjectRepositoryImpl
 import com.example.aiplatform.data.repository.RagRepositoryImpl
+import com.example.aiplatform.data.support.SupportJsonDataSource
 import com.example.aiplatform.domain.repository.ChatRepository
 import com.example.aiplatform.domain.repository.McpRepository
 import com.example.aiplatform.domain.repository.MemoryRepository
@@ -57,6 +64,14 @@ class AppContainer(context: Context) {
     val projectGithubBindingRepository: ProjectGithubBindingRepository =
         ProjectGithubBindingRepositoryImpl(database.projectGithubBindingDao())
     private val githubApiClient = GithubApiClient(githubApi)
+    private val supportAssetTextProvider: (String) -> String? = { fileName ->
+        runCatching {
+            context.assets.open("support/$fileName").bufferedReader().use { it.readText() }
+        }.getOrNull()
+    }
+    private val supportJsonDataSource = SupportJsonDataSource(
+        assetTextProvider = supportAssetTextProvider
+    )
     private val githubToolRegistry = GithubToolRegistry(
         githubApiClient = githubApiClient,
         projectGithubBindingRepository = projectGithubBindingRepository,
@@ -64,6 +79,18 @@ class AppContainer(context: Context) {
     )
     val githubMcpServer = GithubMcpServer(
         executor = GithubMcpToolExecutorImpl(githubToolRegistry)
+    )
+    private val supportToolRegistry = SupportToolRegistry(
+        projectRepository = projectRepository,
+        jsonDataSource = supportJsonDataSource
+    )
+    val supportMcpServer = SupportMcpServer(
+        executor = SupportMcpToolExecutorImpl(supportToolRegistry)
+    )
+    val supportRagBootstrapper = SupportRagBootstrapper(
+        projectRepository = projectRepository,
+        ragRepository = ragRepository,
+        assetTextProvider = supportAssetTextProvider
     )
 
     private val memoryManager = ProjectMemoryManager(chatRepository, memoryRepository, openAiRepository)
@@ -87,6 +114,15 @@ class AppContainer(context: Context) {
         githubMcpServer = githubMcpServer,
         promptBuilder = PullRequestReviewPromptBuilder()
     )
+    private val supportAssistantService = SupportAssistantService(
+        projectRepository = projectRepository,
+        chatRepository = chatRepository,
+        memoryRepository = memoryRepository,
+        ragRepository = ragRepository,
+        openAiRepository = openAiRepository,
+        supportMcpServer = supportMcpServer,
+        promptBuilder = SupportAssistantPromptBuilder()
+    )
 
     private val chatAgent = ChatAgent(chatRepository)
     private val ragAgent = RagAgent(ragRepository)
@@ -102,6 +138,7 @@ class AppContainer(context: Context) {
         mcpAgent = mcpAgent,
         memoryAgent = memoryAgent,
         developerAssistantHandler = developerAssistantService,
-        pullRequestReviewHandler = pullRequestReviewService
+        pullRequestReviewHandler = pullRequestReviewService,
+        supportAssistantHandler = supportAssistantService
     )
 }

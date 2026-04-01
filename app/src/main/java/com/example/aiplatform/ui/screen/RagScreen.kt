@@ -26,6 +26,7 @@ import com.example.aiplatform.ui.viewmodel.RagViewModel
 @Composable
 fun RagScreen(viewModel: RagViewModel) {
     val indexes by viewModel.indexes.collectAsState()
+    val supportImportState by viewModel.supportImportState.collectAsState()
     var title by remember { mutableStateOf("") }
     var doc by remember { mutableStateOf("") }
 
@@ -61,6 +62,21 @@ fun RagScreen(viewModel: RagViewModel) {
             }
         }) {
             Text("Embed to active index")
+        }
+
+        Text("Support RAG import", style = MaterialTheme.typography.titleMedium)
+        Button(onClick = { viewModel.importFaqJson() }, modifier = Modifier.fillMaxWidth()) {
+            Text("Подключить FAQ (faq.json)")
+        }
+        Button(onClick = { viewModel.importSupportDocsMd() }, modifier = Modifier.fillMaxWidth()) {
+            Text("Подключить Support Docs (support_docs.md)")
+        }
+        Text("Status: ${supportImportState.status.name}")
+        if (supportImportState.message.isNotBlank()) {
+            Text("Info: ${supportImportState.message}")
+        }
+        if (supportImportState.error.isNotBlank()) {
+            Text("Error: ${supportImportState.error}")
         }
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {

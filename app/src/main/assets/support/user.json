@@ -1,0 +1,56 @@
+[
+  {
+    "id": "u-1001",
+    "name": "Anna Petrova",
+    "email": "anna.petrova@example.com",
+    "plan": "free",
+    "status": "active",
+    "locale": "ru",
+    "createdAt": "2026-02-10T09:15:00Z"
+  },
+  {
+    "id": "u-1002",
+    "name": "Ivan Sidorov",
+    "email": "ivan.sidorov@example.com",
+    "plan": "premium",
+    "status": "active",
+    "locale": "ru",
+    "createdAt": "2026-01-05T13:40:00Z"
+  },
+  {
+    "id": "u-1003",
+    "name": "Maria Volkova",
+    "email": "maria.volkova@example.com",
+    "plan": "team",
+    "status": "active",
+    "locale": "en",
+    "createdAt": "2025-12-21T16:05:00Z"
+  },
+  {
+    "id": "u-1004",
+    "name": "Sergey Orlov",
+    "email": "sergey.orlov@example.com",
+    "plan": "free",
+    "status": "blocked",
+    "locale": "ru",
+    "createdAt": "2026-03-01T08:25:00Z"
+  },
+  {
+    "id": "u-1005",
+    "name": "Olga Smirnova",
+    "email": "olga.smirnova@example.com",
+    "plan": "premium",
+    "status": "active",
+    "locale": "ru",
+    "createdAt": "2025-11-30T11:10:00Z"
+  },
+  {
+    "id": "u-1006",
+    "name": "Dmitry Kozlov",
+    "email": "dmitry.kozlov@example.com",
+    "plan": "team",
+    "status": "active",
+    "locale": "en",
+    "createdAt": "2026-02-18T14:55:00Z"
+  }
+]

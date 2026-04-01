@@ -12,6 +12,8 @@ import com.example.aiplatform.assistant.DeveloperAssistantService
 import com.example.aiplatform.assistant.PullRequestListResult
 import com.example.aiplatform.assistant.PullRequestReviewExecutionResult
 import com.example.aiplatform.assistant.PullRequestReviewHandler
+import com.example.aiplatform.assistant.SupportAssistantHandler
+import com.example.aiplatform.assistant.SupportAssistantResult
 import com.example.aiplatform.data.mcp.GitBranchTool
 import com.example.aiplatform.data.memory.ProjectMemoryManager
 import com.example.aiplatform.domain.model.Chat
@@ -60,7 +62,8 @@ class DeveloperHelpRoutingTest {
             mcpAgent = McpAgent(FakeMcpRepository(), GitBranchTool()),
             memoryAgent = MemoryAgent(ProjectMemoryManager(chatRepo, FakeMemoryRepository(), openAi)),
             developerAssistantHandler = helpHandler,
-            pullRequestReviewHandler = NoopPullRequestReviewHandler()
+            pullRequestReviewHandler = NoopPullRequestReviewHandler(),
+            supportAssistantHandler = NoopSupportAssistantHandler()
         )
 
         val result = orchestrator.sendMessage("p1", "c1", "/help как устроен проект?")
@@ -76,6 +79,17 @@ class DeveloperHelpRoutingTest {
 
         override suspend fun reviewPr(projectId: String, chatId: String, prNumber: Int): PullRequestReviewExecutionResult =
             PullRequestReviewExecutionResult("none", usedRag = false, usedMcp = false, postedToGithub = false)
+    }
+
+    private class NoopSupportAssistantHandler : SupportAssistantHandler {
+        override suspend fun setActiveUser(projectId: String, chatId: String, userId: String): SupportAssistantResult =
+            SupportAssistantResult("none", usedRag = false, usedMcp = false, activeUserId = null, activeTicketId = null)
+
+        override suspend fun setActiveTicket(projectId: String, chatId: String, ticketId: String): SupportAssistantResult =
+            SupportAssistantResult("none", usedRag = false, usedMcp = false, activeUserId = null, activeTicketId = null)
+
+        override suspend fun answer(projectId: String, chatId: String, question: String): SupportAssistantResult =
+            SupportAssistantResult("none", usedRag = false, usedMcp = false, activeUserId = null, activeTicketId = null)
     }
 
     @Test
