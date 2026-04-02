@@ -4,6 +4,7 @@ import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.PUT
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -28,8 +29,39 @@ interface GithubApiService {
     suspend fun getContentByPath(
         @Path("owner") owner: String,
         @Path("repo") repo: String,
-        @Path("path") path: String
+        @Path(value = "path", encoded = true) path: String,
+        @Query("ref") ref: String? = null
     ): GithubContentDto
+
+    @GET("repos/{owner}/{repo}/git/trees/{tree_sha}")
+    suspend fun getRepositoryTree(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Path("tree_sha") treeSha: String,
+        @Query("recursive") recursive: Int? = null
+    ): GithubGitTreeResponseDto
+
+    @GET("repos/{owner}/{repo}/git/ref/{ref}")
+    suspend fun getReference(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Path(value = "ref", encoded = true) ref: String
+    ): GithubGitRefDto
+
+    @POST("repos/{owner}/{repo}/git/refs")
+    suspend fun createReference(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Body body: GithubCreateRefRequestDto
+    ): GithubGitRefDto
+
+    @PUT("repos/{owner}/{repo}/contents/{path}")
+    suspend fun createOrUpdateFileContent(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Path(value = "path", encoded = true) path: String,
+        @Body body: GithubCreateOrUpdateFileRequestDto
+    ): GithubCreateOrUpdateFileResponseDto
 
     @GET("repos/{owner}/{repo}/pulls")
     suspend fun listOpenPullRequests(
@@ -67,4 +99,11 @@ interface GithubApiService {
         @Path("pull_number") pullNumber: Int,
         @Body body: GithubSubmitReviewRequestDto
     ): GithubPullRequestReviewResponseDto
+
+    @POST("repos/{owner}/{repo}/pulls")
+    suspend fun createPullRequest(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Body body: GithubCreatePullRequestRequestDto
+    ): GithubCreatePullRequestResponseDto
 }

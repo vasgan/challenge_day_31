@@ -40,40 +40,30 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class PullRequestReviewRoutingTest {
+class FileOpsRoutingTest {
 
     @Test
-    fun `review command without number routes to list mode`() = runTest {
+    fun `file_task goal routes to file ops handler`() = runTest {
         val fixture = fixture()
 
-        fixture.orchestrator.sendMessage("p1", "chat", "/review_pr")
+        val result = fixture.orchestrator.sendMessage("p1", "chat", "/file_task найди где используется SupportMcpServer")
 
-        assertEquals(1, fixture.reviewHandler.listCalls)
-        assertEquals(0, fixture.reviewHandler.runCalls)
+        assertEquals(1, fixture.fileOps.calls)
+        assertTrue(result.answer.contains("fileops-result"))
+        assertTrue(fixture.chatRepository.getMessages("chat").last().metadata.contains("\"fileTask\":true"))
+        assertEquals(0, fixture.openAi.calls)
     }
 
     @Test
-    fun `review command with number routes to run mode`() = runTest {
+    fun `file_task without goal returns usage error`() = runTest {
         val fixture = fixture()
 
-        fixture.orchestrator.sendMessage("p1", "chat", "/review_pr 123")
+        val result = fixture.orchestrator.sendMessage("p1", "chat", "/file_task")
 
-        assertEquals(0, fixture.reviewHandler.listCalls)
-        assertEquals(1, fixture.reviewHandler.runCalls)
-        assertEquals(123, fixture.reviewHandler.lastPr)
-        val last = fixture.chatRepository.getMessages("chat").last()
-        assertEquals("review", last.content)
-    }
-
-    @Test
-    fun `invalid review command is handled safely in chat`() = runTest {
-        val fixture = fixture()
-
-        val result = fixture.orchestrator.sendMessage("p1", "chat", "/review_pr abc")
-
-        assertTrue(result.answer.contains("Неверный формат"))
-        val last = fixture.chatRepository.getMessages("chat").last()
-        assertTrue(last.content.contains("Неверный формат"))
+        assertTrue(result.answer.contains("/file_task <цель>"))
+        assertTrue(fixture.chatRepository.getMessages("chat").last().content.contains("/file_task <цель>"))
+        assertEquals(0, fixture.fileOps.calls)
+        assertEquals(0, fixture.openAi.calls)
     }
 
     private fun fixture(): Fixture {
@@ -82,7 +72,7 @@ class PullRequestReviewRoutingTest {
         )
         val chatRepository = FakeChatRepository(mapOf("chat" to Chat("chat", "p1", "General")))
         val openAiRepository = FakeOpenAiRepository()
-        val reviewHandler = CaptureReviewHandler()
+        val fileOps = CaptureFileOpsHandler()
 
         val orchestrator = AgentOrchestrator(
             projectRepository = projectRepository,
@@ -93,34 +83,33 @@ class PullRequestReviewRoutingTest {
             mcpAgent = McpAgent(FakeMcpRepository(), GitBranchTool()),
             memoryAgent = MemoryAgent(ProjectMemoryManager(chatRepository, FakeMemoryRepository(), openAiRepository)),
             developerAssistantHandler = NoopDeveloperAssistantHandler(),
-            pullRequestReviewHandler = reviewHandler,
+            pullRequestReviewHandler = NoopPullRequestReviewHandler(),
             supportAssistantHandler = NoopSupportAssistantHandler(),
-            fileOpsAssistantHandler = NoopFileOpsAssistantHandler()
+            fileOpsAssistantHandler = fileOps
         )
 
-        return Fixture(orchestrator, chatRepository, reviewHandler)
+        return Fixture(orchestrator, chatRepository, openAiRepository, fileOps)
     }
 
     private data class Fixture(
         val orchestrator: AgentOrchestrator,
         val chatRepository: FakeChatRepository,
-        val reviewHandler: CaptureReviewHandler
+        val openAi: FakeOpenAiRepository,
+        val fileOps: CaptureFileOpsHandler
     )
 
-    private class CaptureReviewHandler : PullRequestReviewHandler {
-        var listCalls = 0
-        var runCalls = 0
-        var lastPr: Int? = null
+    private class CaptureFileOpsHandler : FileOpsAssistantHandler {
+        var calls = 0
 
-        override suspend fun listOpenPrs(projectId: String): PullRequestListResult {
-            listCalls += 1
-            return PullRequestListResult("list", success = true)
-        }
-
-        override suspend fun reviewPr(projectId: String, chatId: String, prNumber: Int): PullRequestReviewExecutionResult {
-            runCalls += 1
-            lastPr = prNumber
-            return PullRequestReviewExecutionResult("review", usedRag = true, usedMcp = true, postedToGithub = false)
+        override suspend fun runTask(projectId: String, chatId: String, goal: String): FileOpsResult {
+            calls += 1
+            return FileOpsResult(
+                answer = "fileops-result",
+                success = true,
+                changedFiles = listOf("README.md"),
+                openedPr = true,
+                prUrl = "https://example/pr/1"
+            )
         }
     }
 
@@ -128,6 +117,14 @@ class PullRequestReviewRoutingTest {
         override suspend fun handleHelp(projectId: String, chatId: String, userQuestion: String): DeveloperAssistantResult {
             return DeveloperAssistantResult("help", usedRag = false, usedMcp = false)
         }
+    }
+
+    private class NoopPullRequestReviewHandler : PullRequestReviewHandler {
+        override suspend fun listOpenPrs(projectId: String): PullRequestListResult =
+            PullRequestListResult("none", success = true)
+
+        override suspend fun reviewPr(projectId: String, chatId: String, prNumber: Int): PullRequestReviewExecutionResult =
+            PullRequestReviewExecutionResult("none", usedRag = false, usedMcp = false, postedToGithub = false)
     }
 
     private class NoopSupportAssistantHandler : SupportAssistantHandler {
@@ -139,11 +136,6 @@ class PullRequestReviewRoutingTest {
 
         override suspend fun answer(projectId: String, chatId: String, question: String): SupportAssistantResult =
             SupportAssistantResult("none", usedRag = false, usedMcp = false, activeUserId = null, activeTicketId = null)
-    }
-
-    private class NoopFileOpsAssistantHandler : FileOpsAssistantHandler {
-        override suspend fun runTask(projectId: String, chatId: String, goal: String): FileOpsResult =
-            FileOpsResult("none", success = true, changedFiles = emptyList(), openedPr = false, prUrl = null)
     }
 
     private class FakeProjectRepository(projects: List<Project>) : ProjectRepository {
@@ -192,12 +184,17 @@ class PullRequestReviewRoutingTest {
     }
 
     private class FakeOpenAiRepository : OpenAiRepository {
+        var calls = 0
+
         override suspend fun responses(
             model: ProjectTextModel,
             systemPrompt: String,
             context: String,
             userInput: String
-        ): String = "ok"
+        ): String {
+            calls += 1
+            return "ok"
+        }
 
         override suspend fun summarizeMemory(
             model: ProjectTextModel,

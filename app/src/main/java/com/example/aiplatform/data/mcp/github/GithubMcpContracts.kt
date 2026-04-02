@@ -1,11 +1,17 @@
 package com.example.aiplatform.data.mcp.github
 
 import com.example.aiplatform.domain.model.GithubReadme
+import com.example.aiplatform.domain.model.GithubBranchInfo
+import com.example.aiplatform.domain.model.GithubCreatedPullRequest
+import com.example.aiplatform.domain.model.GithubFileContent
+import com.example.aiplatform.domain.model.GithubFileSearchMatch
+import com.example.aiplatform.domain.model.GithubFileUpsertResult
 import com.example.aiplatform.domain.model.GithubPullRequestDetails
 import com.example.aiplatform.domain.model.GithubPullRequestDiff
 import com.example.aiplatform.domain.model.GithubPullRequestFile
 import com.example.aiplatform.domain.model.GithubPullRequestReviewResult
 import com.example.aiplatform.domain.model.GithubPullRequestSummary
+import com.example.aiplatform.domain.model.GithubRepoFileEntry
 import com.example.aiplatform.domain.model.GithubRepo
 import com.example.aiplatform.domain.model.ProjectGithubBinding
 
@@ -24,6 +30,12 @@ sealed interface GithubMcpToolData {
     data class PullRequestFilesPayload(val files: List<GithubPullRequestFile>) : GithubMcpToolData
     data class PullRequestDiffPayload(val diff: GithubPullRequestDiff) : GithubMcpToolData
     data class PullRequestReviewPayload(val result: GithubPullRequestReviewResult) : GithubMcpToolData
+    data class RepositoryFilesPayload(val projectId: String, val files: List<GithubRepoFileEntry>) : GithubMcpToolData
+    data class FileContentPayload(val file: GithubFileContent) : GithubMcpToolData
+    data class FileSearchPayload(val query: String, val matches: List<GithubFileSearchMatch>) : GithubMcpToolData
+    data class BranchPayload(val branch: GithubBranchInfo) : GithubMcpToolData
+    data class FileUpsertPayload(val upsert: GithubFileUpsertResult) : GithubMcpToolData
+    data class CreatedPullRequestPayload(val pullRequest: GithubCreatedPullRequest) : GithubMcpToolData
 }
 
 data class GithubMcpToolResult(
@@ -47,4 +59,10 @@ object GithubMcpTools {
     const val GET_PULL_REQUEST_FILES = "github_get_pull_request_files"
     const val GET_PULL_REQUEST_DIFF = "github_get_pull_request_diff"
     const val SUBMIT_PULL_REQUEST_REVIEW = "github_submit_pull_request_review"
+    const val LIST_REPOSITORY_FILES = "github_list_repository_files"
+    const val GET_FILE_CONTENT = "github_get_file_content"
+    const val SEARCH_IN_FILES = "github_search_in_files"
+    const val CREATE_BRANCH = "github_create_branch"
+    const val UPSERT_FILE_CONTENT = "github_upsert_file_content"
+    const val CREATE_PULL_REQUEST = "github_create_pull_request"
 }

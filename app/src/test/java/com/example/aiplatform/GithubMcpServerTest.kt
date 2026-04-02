@@ -7,11 +7,17 @@ import com.example.aiplatform.data.mcp.github.GithubToolRegistry
 import com.example.aiplatform.domain.model.GithubReadme
 import com.example.aiplatform.domain.model.GithubPullRequestDetails
 import com.example.aiplatform.domain.model.GithubPullRequestDiff
+import com.example.aiplatform.domain.model.GithubBranchInfo
+import com.example.aiplatform.domain.model.GithubCreatedPullRequest
+import com.example.aiplatform.domain.model.GithubFileContent
+import com.example.aiplatform.domain.model.GithubFileSearchMatch
+import com.example.aiplatform.domain.model.GithubFileUpsertResult
 import com.example.aiplatform.domain.model.GithubPullRequestFile
 import com.example.aiplatform.domain.model.GithubPullRequestReviewRequest
 import com.example.aiplatform.domain.model.GithubPullRequestReviewResult
 import com.example.aiplatform.domain.model.GithubPullRequestSummary
 import com.example.aiplatform.domain.model.GithubRepo
+import com.example.aiplatform.domain.model.GithubRepoFileEntry
 import com.example.aiplatform.domain.model.ProjectGithubBinding
 import com.example.aiplatform.domain.model.RagChunk
 import com.example.aiplatform.domain.model.RagDocumentChunk
@@ -208,6 +214,52 @@ class GithubMcpServerTest {
             prNumber: Int,
             request: GithubPullRequestReviewRequest
         ): Result<GithubPullRequestReviewResult> = Result.failure(IllegalStateException("not implemented"))
+
+        override suspend fun listRepositoryFiles(
+            owner: String,
+            repo: String,
+            path: String,
+            recursive: Boolean
+        ): Result<List<GithubRepoFileEntry>> = Result.failure(IllegalStateException("not implemented"))
+
+        override suspend fun getFileContent(
+            owner: String,
+            repo: String,
+            path: String,
+            ref: String?
+        ): Result<GithubFileContent> = Result.failure(IllegalStateException("not implemented"))
+
+        override suspend fun searchInFiles(
+            owner: String,
+            repo: String,
+            query: String,
+            extensions: List<String>
+        ): Result<List<GithubFileSearchMatch>> = Result.failure(IllegalStateException("not implemented"))
+
+        override suspend fun createBranch(
+            owner: String,
+            repo: String,
+            base: String,
+            branch: String
+        ): Result<GithubBranchInfo> = Result.failure(IllegalStateException("not implemented"))
+
+        override suspend fun upsertFileContent(
+            owner: String,
+            repo: String,
+            branch: String,
+            path: String,
+            content: String,
+            message: String
+        ): Result<GithubFileUpsertResult> = Result.failure(IllegalStateException("not implemented"))
+
+        override suspend fun createPullRequest(
+            owner: String,
+            repo: String,
+            title: String,
+            body: String,
+            head: String,
+            base: String
+        ): Result<GithubCreatedPullRequest> = Result.failure(IllegalStateException("not implemented"))
     }
 
     private class FakeProjectGithubBindingRepository : ProjectGithubBindingRepository {

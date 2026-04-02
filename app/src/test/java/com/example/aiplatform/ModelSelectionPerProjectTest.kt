@@ -7,6 +7,8 @@ import com.example.aiplatform.agent.MemoryAgent
 import com.example.aiplatform.agent.RagAgent
 import com.example.aiplatform.assistant.DeveloperAssistantHandler
 import com.example.aiplatform.assistant.DeveloperAssistantResult
+import com.example.aiplatform.assistant.FileOpsAssistantHandler
+import com.example.aiplatform.assistant.FileOpsResult
 import com.example.aiplatform.assistant.PullRequestListResult
 import com.example.aiplatform.assistant.PullRequestReviewExecutionResult
 import com.example.aiplatform.assistant.PullRequestReviewHandler
@@ -67,7 +69,8 @@ class ModelSelectionPerProjectTest {
             memoryAgent = MemoryAgent(ProjectMemoryManager(chatRepo, memoryRepo, openAi)),
             developerAssistantHandler = NoopDeveloperAssistantHandler(),
             pullRequestReviewHandler = NoopPullRequestReviewHandler(),
-            supportAssistantHandler = NoopSupportAssistantHandler()
+            supportAssistantHandler = NoopSupportAssistantHandler(),
+            fileOpsAssistantHandler = NoopFileOpsAssistantHandler()
         )
 
         orchestrator.sendMessage("p1", "c1", "hi")
@@ -166,5 +169,10 @@ class ModelSelectionPerProjectTest {
 
         override suspend fun answer(projectId: String, chatId: String, question: String): SupportAssistantResult =
             SupportAssistantResult("none", usedRag = false, usedMcp = false, activeUserId = null, activeTicketId = null)
+    }
+
+    private class NoopFileOpsAssistantHandler : FileOpsAssistantHandler {
+        override suspend fun runTask(projectId: String, chatId: String, goal: String): FileOpsResult =
+            FileOpsResult("none", success = true, changedFiles = emptyList(), openedPr = false, prUrl = null)
     }
 }

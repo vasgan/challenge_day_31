@@ -4,15 +4,14 @@ import com.example.aiplatform.data.github.GithubApiGateway
 import com.example.aiplatform.data.mcp.github.GithubMcpServer
 import com.example.aiplatform.data.mcp.github.GithubMcpToolExecutorImpl
 import com.example.aiplatform.data.mcp.github.GithubToolRegistry
-import com.example.aiplatform.domain.model.GithubPullRequestDetails
-import com.example.aiplatform.domain.model.GithubPullRequestDiff
 import com.example.aiplatform.domain.model.GithubBranchInfo
 import com.example.aiplatform.domain.model.GithubCreatedPullRequest
 import com.example.aiplatform.domain.model.GithubFileContent
 import com.example.aiplatform.domain.model.GithubFileSearchMatch
 import com.example.aiplatform.domain.model.GithubFileUpsertResult
+import com.example.aiplatform.domain.model.GithubPullRequestDetails
+import com.example.aiplatform.domain.model.GithubPullRequestDiff
 import com.example.aiplatform.domain.model.GithubPullRequestFile
-import com.example.aiplatform.domain.model.GithubPullRequestInlineComment
 import com.example.aiplatform.domain.model.GithubPullRequestReviewRequest
 import com.example.aiplatform.domain.model.GithubPullRequestReviewResult
 import com.example.aiplatform.domain.model.GithubPullRequestSummary
@@ -29,73 +28,70 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class GithubPrMcpToolsTest {
+class GithubFileOpsMcpToolsTest {
 
     @Test
-    fun `list open pr by project scoped binding`() = runTest {
+    fun `list get and search files are project scoped`() = runTest {
         val fixture = fixture()
 
-        val prs = fixture.server.githubListOpenPullRequests("project-a").getOrThrow()
+        val filesA = fixture.server.githubListRepositoryFiles("project-a").getOrThrow()
+        val filesB = fixture.server.githubListRepositoryFiles("project-b").getOrThrow()
+        val fileA = fixture.server.githubGetFileContent("project-a", "README.md").getOrThrow()
+        val searchA = fixture.server.githubSearchInFiles("project-a", "Support", listOf("md")).getOrThrow()
 
-        assertEquals(1, prs.size)
-        assertEquals("A repo PR", prs.first().title)
+        assertTrue(filesA.any { it.path == "README.md" })
+        assertTrue(filesB.any { it.path == "README.md" })
+        assertTrue(fileA.content.contains("repoA"))
+        assertTrue(searchA.any { it.path == "README.md" })
+        assertEquals("repoA", fixture.api.lastOwnerForSearch)
     }
 
     @Test
-    fun `get details files and diff`() = runTest {
+    fun `upsert mapping works`() = runTest {
         val fixture = fixture()
 
-        val details = fixture.server.githubGetPullRequestDetails("project-a", 10).getOrThrow()
-        val files = fixture.server.githubGetPullRequestFiles("project-a", 10).getOrThrow()
-        val diff = fixture.server.githubGetPullRequestDiff("project-a", 10).getOrThrow()
-
-        assertEquals("A repo PR", details.title)
-        assertEquals(1, files.size)
-        assertTrue(diff.diff.contains("diff --git"))
-    }
-
-    @Test
-    fun `submit review payload mapping`() = runTest {
-        val fixture = fixture()
-
-        val result = fixture.server.githubSubmitPullRequestReview(
+        val result = fixture.server.githubUpsertFileContent(
             projectId = "project-a",
-            prNumber = 10,
-            review = GithubPullRequestReviewRequest(
-                body = "review body",
-                comments = listOf(
-                    GithubPullRequestInlineComment(
-                        path = "app/src/main/java/com/example/aiplatform/Foo.kt",
-                        line = 22,
-                        body = "Fix this"
-                    )
-                )
-            )
+            branch = "ai/fileops-1",
+            path = "README.md",
+            content = "new content",
+            message = "docs: update readme"
         ).getOrThrow()
 
-        assertTrue(result.submitted)
-        val captured = fixture.api.lastSubmit
-        assertNotNull(captured)
-        assertEquals("orgA", captured?.owner)
-        assertEquals("repoA", captured?.repo)
-        assertEquals(10, captured?.prNumber)
-        assertEquals(1, captured?.request?.comments?.size)
-        assertEquals("review body", captured?.request?.body)
+        assertEquals("README.md", result.path)
+        assertEquals("repoA", fixture.api.lastUpsert?.repo)
+        assertEquals("ai/fileops-1", fixture.api.lastUpsert?.branch)
     }
 
     @Test
-    fun `cross project isolation for bindings`() = runTest {
+    fun `create branch and pr mapping works`() = runTest {
         val fixture = fixture()
 
-        val a = fixture.server.githubListOpenPullRequests("project-a").getOrThrow().first()
-        val b = fixture.server.githubListOpenPullRequests("project-b").getOrThrow().first()
+        val branch = fixture.server.githubCreateBranch("project-a", "main", "ai/fileops-2").getOrThrow()
+        val pr = fixture.server.githubCreatePullRequest(
+            projectId = "project-a",
+            title = "AI FileOps",
+            body = "body",
+            head = "ai/fileops-2",
+            base = "main"
+        ).getOrThrow()
 
-        assertEquals("A repo PR", a.title)
-        assertEquals("B repo PR", b.title)
+        assertEquals("ai/fileops-2", branch.name)
+        assertTrue(pr.htmlUrl.contains("/pull/"))
+        assertEquals("repoA", fixture.api.lastPr?.repo)
+    }
+
+    @Test
+    fun `cross project isolation`() = runTest {
+        val fixture = fixture()
+
+        fixture.server.githubUpsertFileContent("project-a", "a-branch", "README.md", "A", "msg").getOrThrow()
+        fixture.server.githubUpsertFileContent("project-b", "b-branch", "README.md", "B", "msg").getOrThrow()
+
+        assertEquals("repoB", fixture.api.lastUpsert?.repo)
     }
 
     private fun fixture(): Fixture {
@@ -124,8 +120,7 @@ class GithubPrMcpToolsTest {
                 )
             )
         )
-        val rag = FakeRagRepository()
-        val registry = GithubToolRegistry(api, bindings, rag)
+        val registry = GithubToolRegistry(api, bindings, FakeRagRepository())
         val server = GithubMcpServer(GithubMcpToolExecutorImpl(registry))
         return Fixture(server, api)
     }
@@ -136,112 +131,92 @@ class GithubPrMcpToolsTest {
     )
 
     private class FakeGithubApiGateway : GithubApiGateway {
-        data class SubmitCapture(
-            val owner: String,
-            val repo: String,
-            val prNumber: Int,
-            val request: GithubPullRequestReviewRequest
-        )
+        data class UpsertCall(val owner: String, val repo: String, val branch: String, val path: String)
+        data class PrCall(val owner: String, val repo: String, val head: String, val base: String)
 
-        var lastSubmit: SubmitCapture? = null
+        var lastOwnerForSearch: String? = null
+        var lastUpsert: UpsertCall? = null
+        var lastPr: PrCall? = null
 
         override suspend fun listUserRepos(owner: String): Result<List<GithubRepo>> = Result.success(emptyList())
 
         override suspend fun getRepo(owner: String, repo: String): Result<GithubRepo> =
-            Result.failure(IllegalStateException("unused"))
+            Result.success(
+                GithubRepo(
+                    owner = owner,
+                    name = repo,
+                    fullName = "$owner/$repo",
+                    htmlUrl = "https://github.com/$owner/$repo",
+                    defaultBranch = "main"
+                )
+            )
 
         override suspend fun fetchReadme(owner: String, repo: String): Result<GithubReadme> =
+            Result.success(GithubReadme(owner, repo, "README.md", "main", "# README for $repo"))
+
+        override suspend fun listOpenPullRequests(owner: String, repo: String): Result<List<GithubPullRequestSummary>> =
+            Result.success(emptyList())
+
+        override suspend fun getPullRequest(owner: String, repo: String, prNumber: Int): Result<GithubPullRequestDetails> =
             Result.failure(IllegalStateException("unused"))
 
-        override suspend fun listOpenPullRequests(owner: String, repo: String): Result<List<GithubPullRequestSummary>> {
-            val title = if (owner == "orgA") "A repo PR" else "B repo PR"
-            return Result.success(
-                listOf(
-                    GithubPullRequestSummary(
-                        number = 10,
-                        title = title,
-                        author = "octocat",
-                        updatedAt = "2026-03-31T00:00:00Z",
-                        htmlUrl = "https://github.com/$owner/$repo/pull/10"
-                    )
-                )
-            )
-        }
-
-        override suspend fun getPullRequest(owner: String, repo: String, prNumber: Int): Result<GithubPullRequestDetails> {
-            val title = if (owner == "orgA") "A repo PR" else "B repo PR"
-            return Result.success(
-                GithubPullRequestDetails(
-                    number = prNumber,
-                    title = title,
-                    body = "body",
-                    baseBranch = "main",
-                    headBranch = "feature",
-                    author = "octocat",
-                    htmlUrl = "https://github.com/$owner/$repo/pull/$prNumber"
-                )
-            )
-        }
-
         override suspend fun listPullRequestFiles(owner: String, repo: String, prNumber: Int): Result<List<GithubPullRequestFile>> =
-            Result.success(
-                listOf(
-                    GithubPullRequestFile(
-                        filename = "app/src/main/java/com/example/aiplatform/Foo.kt",
-                        status = "modified",
-                        additions = 3,
-                        deletions = 1,
-                        patch = "@@ -1 +1 @@"
-                    )
-                )
-            )
+            Result.failure(IllegalStateException("unused"))
 
         override suspend fun getPullRequestDiff(owner: String, repo: String, prNumber: Int): Result<GithubPullRequestDiff> =
-            Result.success(GithubPullRequestDiff("diff --git a/Foo.kt b/Foo.kt"))
+            Result.failure(IllegalStateException("unused"))
 
         override suspend fun submitPullRequestReview(
             owner: String,
             repo: String,
             prNumber: Int,
             request: GithubPullRequestReviewRequest
-        ): Result<GithubPullRequestReviewResult> {
-            lastSubmit = SubmitCapture(owner, repo, prNumber, request)
-            return Result.success(
-                GithubPullRequestReviewResult(
-                    reviewId = "1",
-                    htmlUrl = "https://github.com/$owner/$repo/pull/$prNumber#pullrequestreview-1",
-                    submitted = true
-                )
-            )
-        }
+        ): Result<GithubPullRequestReviewResult> = Result.failure(IllegalStateException("unused"))
 
         override suspend fun listRepositoryFiles(
             owner: String,
             repo: String,
             path: String,
             recursive: Boolean
-        ): Result<List<GithubRepoFileEntry>> = Result.failure(IllegalStateException("unused"))
+        ): Result<List<GithubRepoFileEntry>> {
+            return Result.success(
+                listOf(
+                    GithubRepoFileEntry(path = "README.md", type = "blob", size = 100, sha = "sha-readme"),
+                    GithubRepoFileEntry(path = "app/src/main/Main.kt", type = "blob", size = 200, sha = "sha-main")
+                )
+            )
+        }
 
-        override suspend fun getFileContent(
-            owner: String,
-            repo: String,
-            path: String,
-            ref: String?
-        ): Result<GithubFileContent> = Result.failure(IllegalStateException("unused"))
+        override suspend fun getFileContent(owner: String, repo: String, path: String, ref: String?): Result<GithubFileContent> {
+            return Result.success(
+                GithubFileContent(
+                    path = path,
+                    sha = "sha-content",
+                    ref = ref,
+                    content = "# README for $repo"
+                )
+            )
+        }
 
         override suspend fun searchInFiles(
             owner: String,
             repo: String,
             query: String,
             extensions: List<String>
-        ): Result<List<GithubFileSearchMatch>> = Result.failure(IllegalStateException("unused"))
+        ): Result<List<GithubFileSearchMatch>> {
+            lastOwnerForSearch = repo
+            return Result.success(
+                listOf(
+                    GithubFileSearchMatch(path = "README.md", line = 12, snippet = "Support MCP info")
+                )
+            )
+        }
 
-        override suspend fun createBranch(
-            owner: String,
-            repo: String,
-            base: String,
-            branch: String
-        ): Result<GithubBranchInfo> = Result.failure(IllegalStateException("unused"))
+        override suspend fun createBranch(owner: String, repo: String, base: String, branch: String): Result<GithubBranchInfo> {
+            return Result.success(
+                GithubBranchInfo(name = branch, ref = "refs/heads/$branch", sha = "sha-branch")
+            )
+        }
 
         override suspend fun upsertFileContent(
             owner: String,
@@ -250,7 +225,12 @@ class GithubPrMcpToolsTest {
             path: String,
             content: String,
             message: String
-        ): Result<GithubFileUpsertResult> = Result.failure(IllegalStateException("unused"))
+        ): Result<GithubFileUpsertResult> {
+            lastUpsert = UpsertCall(owner, repo, branch, path)
+            return Result.success(
+                GithubFileUpsertResult(path = path, fileSha = "file-sha", commitSha = "commit-sha", commitUrl = null)
+            )
+        }
 
         override suspend fun createPullRequest(
             owner: String,
@@ -259,7 +239,12 @@ class GithubPrMcpToolsTest {
             body: String,
             head: String,
             base: String
-        ): Result<GithubCreatedPullRequest> = Result.failure(IllegalStateException("unused"))
+        ): Result<GithubCreatedPullRequest> {
+            lastPr = PrCall(owner, repo, head, base)
+            return Result.success(
+                GithubCreatedPullRequest(number = 10, title = title, htmlUrl = "https://github.com/$owner/$repo/pull/10")
+            )
+        }
     }
 
     private class FakeProjectGithubBindingRepository(

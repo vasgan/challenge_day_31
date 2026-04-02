@@ -26,6 +26,12 @@ class GithubToolRegistry(
             GithubMcpTools.GET_PULL_REQUEST_FILES -> getPullRequestFiles(call.arguments)
             GithubMcpTools.GET_PULL_REQUEST_DIFF -> getPullRequestDiff(call.arguments)
             GithubMcpTools.SUBMIT_PULL_REQUEST_REVIEW -> submitPullRequestReview(call.arguments)
+            GithubMcpTools.LIST_REPOSITORY_FILES -> listRepositoryFiles(call.arguments)
+            GithubMcpTools.GET_FILE_CONTENT -> getFileContent(call.arguments)
+            GithubMcpTools.SEARCH_IN_FILES -> searchInFiles(call.arguments)
+            GithubMcpTools.CREATE_BRANCH -> createBranch(call.arguments)
+            GithubMcpTools.UPSERT_FILE_CONTENT -> upsertFileContent(call.arguments)
+            GithubMcpTools.CREATE_PULL_REQUEST -> createPullRequest(call.arguments)
             else -> GithubMcpToolResult(success = false, error = "Unknown tool: ${call.tool}")
         }
     }
@@ -259,6 +265,139 @@ class GithubToolRegistry(
         return GithubMcpToolResult(
             success = true,
             data = GithubMcpToolData.PullRequestReviewPayload(result = reviewResult)
+        )
+    }
+
+    private suspend fun listRepositoryFiles(arguments: Map<String, String>): GithubMcpToolResult {
+        val projectId = arguments["projectId"].orEmpty().trim()
+        if (projectId.isBlank()) return GithubMcpToolResult(success = false, error = "projectId is required")
+        val path = arguments["path"].orEmpty()
+        val recursive = arguments["recursive"].orEmpty().ifBlank { "true" }.toBooleanStrictOrNull() ?: true
+
+        val binding = requireProjectBinding(projectId)
+            ?: return GithubMcpToolResult(success = false, error = "No GitHub repo bound to project")
+        val files = githubApiClient.listRepositoryFiles(binding.owner, binding.repo, path, recursive)
+            .getOrElse { throwable ->
+                return GithubMcpToolResult(success = false, error = throwable.message ?: "Failed to list repository files")
+            }
+
+        return GithubMcpToolResult(
+            success = true,
+            data = GithubMcpToolData.RepositoryFilesPayload(projectId = projectId, files = files)
+        )
+    }
+
+    private suspend fun getFileContent(arguments: Map<String, String>): GithubMcpToolResult {
+        val projectId = arguments["projectId"].orEmpty().trim()
+        val path = arguments["path"].orEmpty().trim()
+        if (projectId.isBlank() || path.isBlank()) {
+            return GithubMcpToolResult(success = false, error = "projectId and path are required")
+        }
+        val ref = arguments["ref"]?.trim()?.ifBlank { null }
+
+        val binding = requireProjectBinding(projectId)
+            ?: return GithubMcpToolResult(success = false, error = "No GitHub repo bound to project")
+        val file = githubApiClient.getFileContent(binding.owner, binding.repo, path, ref)
+            .getOrElse { throwable ->
+                return GithubMcpToolResult(success = false, error = throwable.message ?: "Failed to get file content")
+            }
+
+        return GithubMcpToolResult(
+            success = true,
+            data = GithubMcpToolData.FileContentPayload(file = file)
+        )
+    }
+
+    private suspend fun searchInFiles(arguments: Map<String, String>): GithubMcpToolResult {
+        val projectId = arguments["projectId"].orEmpty().trim()
+        val query = arguments["query"].orEmpty().trim()
+        if (projectId.isBlank() || query.isBlank()) {
+            return GithubMcpToolResult(success = false, error = "projectId and query are required")
+        }
+        val extensions = arguments["extensions"].orEmpty()
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+
+        val binding = requireProjectBinding(projectId)
+            ?: return GithubMcpToolResult(success = false, error = "No GitHub repo bound to project")
+        val matches = githubApiClient.searchInFiles(binding.owner, binding.repo, query, extensions)
+            .getOrElse { throwable ->
+                return GithubMcpToolResult(success = false, error = throwable.message ?: "Failed to search in files")
+            }
+
+        return GithubMcpToolResult(
+            success = true,
+            data = GithubMcpToolData.FileSearchPayload(query = query, matches = matches)
+        )
+    }
+
+    private suspend fun createBranch(arguments: Map<String, String>): GithubMcpToolResult {
+        val projectId = arguments["projectId"].orEmpty().trim()
+        val base = arguments["base"].orEmpty().trim()
+        val branch = arguments["branch"].orEmpty().trim()
+        if (projectId.isBlank() || base.isBlank() || branch.isBlank()) {
+            return GithubMcpToolResult(success = false, error = "projectId, base, branch are required")
+        }
+        val binding = requireProjectBinding(projectId)
+            ?: return GithubMcpToolResult(success = false, error = "No GitHub repo bound to project")
+        val branchInfo = githubApiClient.createBranch(binding.owner, binding.repo, base, branch)
+            .getOrElse { throwable ->
+                return GithubMcpToolResult(success = false, error = throwable.message ?: "Failed to create branch")
+            }
+        return GithubMcpToolResult(
+            success = true,
+            data = GithubMcpToolData.BranchPayload(branch = branchInfo)
+        )
+    }
+
+    private suspend fun upsertFileContent(arguments: Map<String, String>): GithubMcpToolResult {
+        val projectId = arguments["projectId"].orEmpty().trim()
+        val branch = arguments["branch"].orEmpty().trim()
+        val path = arguments["path"].orEmpty().trim()
+        val content = arguments["content"].orEmpty()
+        val message = arguments["message"].orEmpty().trim()
+        if (projectId.isBlank() || branch.isBlank() || path.isBlank() || content.isBlank() || message.isBlank()) {
+            return GithubMcpToolResult(success = false, error = "projectId, branch, path, content, message are required")
+        }
+
+        val binding = requireProjectBinding(projectId)
+            ?: return GithubMcpToolResult(success = false, error = "No GitHub repo bound to project")
+        val upsert = githubApiClient.upsertFileContent(
+            owner = binding.owner,
+            repo = binding.repo,
+            branch = branch,
+            path = path,
+            content = content,
+            message = message
+        ).getOrElse { throwable ->
+            return GithubMcpToolResult(success = false, error = throwable.message ?: "Failed to upsert file content")
+        }
+
+        return GithubMcpToolResult(
+            success = true,
+            data = GithubMcpToolData.FileUpsertPayload(upsert = upsert)
+        )
+    }
+
+    private suspend fun createPullRequest(arguments: Map<String, String>): GithubMcpToolResult {
+        val projectId = arguments["projectId"].orEmpty().trim()
+        val title = arguments["title"].orEmpty().trim()
+        val body = arguments["body"].orEmpty()
+        val head = arguments["head"].orEmpty().trim()
+        val base = arguments["base"].orEmpty().trim()
+        if (projectId.isBlank() || title.isBlank() || head.isBlank() || base.isBlank()) {
+            return GithubMcpToolResult(success = false, error = "projectId, title, head, base are required")
+        }
+        val binding = requireProjectBinding(projectId)
+            ?: return GithubMcpToolResult(success = false, error = "No GitHub repo bound to project")
+        val pr = githubApiClient.createPullRequest(binding.owner, binding.repo, title, body, head, base)
+            .getOrElse { throwable ->
+                return GithubMcpToolResult(success = false, error = throwable.message ?: "Failed to create pull request")
+            }
+        return GithubMcpToolResult(
+            success = true,
+            data = GithubMcpToolData.CreatedPullRequestPayload(pullRequest = pr)
         )
     }
 

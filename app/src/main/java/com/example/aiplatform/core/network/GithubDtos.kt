@@ -21,6 +21,9 @@ data class GithubRepoDto(
 data class GithubContentDto(
     val name: String,
     val path: String,
+    val sha: String? = null,
+    val type: String? = null,
+    val size: Int? = null,
     val content: String? = null,
     val encoding: String? = null,
     @SerialName("html_url") val htmlUrl: String? = null
@@ -87,4 +90,79 @@ data class GithubPullRequestReviewResponseDto(
     val id: Long,
     @SerialName("html_url") val htmlUrl: String,
     val state: String? = null
+)
+
+@Serializable
+data class GithubGitTreeEntryDto(
+    val path: String,
+    val type: String,
+    val sha: String,
+    val size: Int? = null
+)
+
+@Serializable
+data class GithubGitTreeResponseDto(
+    val sha: String,
+    val tree: List<GithubGitTreeEntryDto> = emptyList(),
+    val truncated: Boolean = false
+)
+
+@Serializable
+data class GithubGitRefObjectDto(
+    val sha: String,
+    val type: String
+)
+
+@Serializable
+data class GithubGitRefDto(
+    val ref: String,
+    @SerialName("node_id") val nodeId: String? = null,
+    @SerialName("object") val obj: GithubGitRefObjectDto
+)
+
+@Serializable
+data class GithubCreateRefRequestDto(
+    val ref: String,
+    val sha: String
+)
+
+@Serializable
+data class GithubCreateOrUpdateFileRequestDto(
+    val message: String,
+    val content: String,
+    val branch: String,
+    val sha: String? = null
+)
+
+@Serializable
+data class GithubFileContentMetaDto(
+    val path: String,
+    val sha: String
+)
+
+@Serializable
+data class GithubCommitMetaDto(
+    val sha: String,
+    @SerialName("html_url") val htmlUrl: String? = null
+)
+
+@Serializable
+data class GithubCreateOrUpdateFileResponseDto(
+    val content: GithubFileContentMetaDto,
+    val commit: GithubCommitMetaDto
+)
+
+@Serializable
+data class GithubCreatePullRequestRequestDto(
+    val title: String,
+    val body: String,
+    val head: String,
+    val base: String
+)
+
+@Serializable
+data class GithubCreatePullRequestResponseDto(
+    val number: Int,
+    val title: String,
+    @SerialName("html_url") val htmlUrl: String
 )

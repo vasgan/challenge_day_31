@@ -1,6 +1,8 @@
 package com.example.aiplatform.agent
 
 import com.example.aiplatform.assistant.DeveloperAssistantHandler
+import com.example.aiplatform.assistant.FileOpsAssistantHandler
+import com.example.aiplatform.assistant.FileOpsResult
 import com.example.aiplatform.assistant.PullRequestListResult
 import com.example.aiplatform.assistant.PullRequestReviewExecutionResult
 import com.example.aiplatform.assistant.PullRequestReviewHandler
@@ -31,7 +33,8 @@ class AgentOrchestrator(
     private val memoryAgent: MemoryAgent,
     private val developerAssistantHandler: DeveloperAssistantHandler,
     private val pullRequestReviewHandler: PullRequestReviewHandler,
-    private val supportAssistantHandler: SupportAssistantHandler
+    private val supportAssistantHandler: SupportAssistantHandler,
+    private val fileOpsAssistantHandler: FileOpsAssistantHandler
 ) {
 
     suspend fun sendMessage(projectId: String, chatId: String, userInput: String): AgentResult {
@@ -129,6 +132,47 @@ class AgentOrchestrator(
                 )
             )
             return AgentResult(answer = result.answer, usedRag = result.usedRag, usedMcp = result.usedMcp)
+        }
+
+        if (trimmedInput == "/file_task" || trimmedInput.startsWith("/file_task ")) {
+            val goal = trimmedInput.removePrefix("/file_task").trim()
+            val result = if (goal.isBlank()) {
+                FileOpsResult(
+                    answer = "Используйте формат: /file_task <цель>",
+                    success = false,
+                    changedFiles = emptyList(),
+                    openedPr = false,
+                    prUrl = null
+                )
+            } else {
+                runCatching {
+                    fileOpsAssistantHandler.runTask(projectId, chatId, goal)
+                }.getOrElse { throwable ->
+                    FileOpsResult(
+                        answer = "Ошибка file task: ${throwable.message ?: "unknown"}",
+                        success = false,
+                        changedFiles = emptyList(),
+                        openedPr = false,
+                        prUrl = null
+                    )
+                }
+            }
+
+            chatRepository.addMessage(
+                Message(
+                    id = UUID.randomUUID().toString(),
+                    chatId = chatId,
+                    role = MessageRole.ASSISTANT,
+                    content = result.answer,
+                    metadata = "{\"fileTask\":true,\"mode\":\"run\",\"success\":${result.success},\"changedFiles\":${result.changedFiles.size},\"openedPr\":${result.openedPr}}",
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            return AgentResult(
+                answer = result.answer,
+                usedRag = false,
+                usedMcp = true
+            )
         }
 
         if (trimmedInput == "/review_pr") {

@@ -262,15 +262,41 @@ class McpViewModel(
         }
     }
 
+
+    /*Короткий рабочий чеклист в UI:
+
+    challenge_day_31
+
+    Открой проект в приложении и выбери нужный Project.
+    На экране MCP проверь, что GitHub repo уже привязан (если нет, сначала привяжи).
+    Перейди в Chat этого проекта.
+    Введи:
+    /file_task найди где используется SupportMcpServer
+    Должен прийти ответ с найденными местами (path:line:snippet), без создания PR.
+    Проверка write-сценария:
+
+    В том же чате введи:
+    /file_task обнови README по последним изменениям в support assistant
+    Должен прийти ответ с:
+    Файл обновлён: README.md
+    Diff summary: ...
+    PR: https://github.com/.../pull/... (если PR создался)
+    Что смотреть в GitHub:
+
+    Открой PR ссылку из ответа.
+    Проверь:
+    новая ветка вида ai/fileops-...
+    изменён README.md
+    commit message docs(fileops): update README.md (или похожий по сценарию).
+    Если хочешь, следующим шагом можем пройти это вместе на твоём конкретном проекте: ты присылаешь, на каком шаге остановился, и я даю точную проверку/диагностику.
+*/
+
+
     fun loadSupportSnapshot() {
         viewModelScope.launch {
             loadSupportSnapshotInternal(connected = _supportUiState.value.isConnected)
         }
     }
-    /support_user u-1001
-    /support_ticket t-2001
-    /support Почему не работает авторизация?
-
     private suspend fun loadSupportSnapshotInternal(connected: Boolean) {
         _supportUiState.value = _supportUiState.value.copy(
             status = SupportMcpUiStatus.LoadingSnapshot,
