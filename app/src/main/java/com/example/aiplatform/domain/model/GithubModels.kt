@@ -74,3 +74,42 @@ data class GithubPullRequestReviewResult(
     val htmlUrl: String,
     val submitted: Boolean
 )
+
+data class GithubRepoFileEntry(
+    val path: String,
+    val type: String,
+    val size: Int?,
+    val sha: String
+)
+
+data class GithubFileContent(
+    val path: String,
+    val sha: String,
+    val ref: String?,
+    val content: String
+)
+
+data class GithubFileSearchMatch(
+    val path: String,
+    val line: Int,
+    val snippet: String
+)
+
+data class GithubBranchInfo(
+    val name: String,
+    val ref: String,
+    val sha: String
+)
+
+data class GithubFileUpsertResult(
+    val path: String,
+    val fileSha: String,
+    val commitSha: String,
+    val commitUrl: String?
+)
+
+data class GithubCreatedPullRequest(
+    val number: Int,
+    val title: String,
+    val htmlUrl: String
+)

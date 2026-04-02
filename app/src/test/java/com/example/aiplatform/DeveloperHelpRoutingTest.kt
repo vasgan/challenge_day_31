@@ -9,6 +9,8 @@ import com.example.aiplatform.assistant.DeveloperAssistantHandler
 import com.example.aiplatform.assistant.DeveloperAssistantPromptBuilder
 import com.example.aiplatform.assistant.DeveloperAssistantResult
 import com.example.aiplatform.assistant.DeveloperAssistantService
+import com.example.aiplatform.assistant.FileOpsAssistantHandler
+import com.example.aiplatform.assistant.FileOpsResult
 import com.example.aiplatform.assistant.PullRequestListResult
 import com.example.aiplatform.assistant.PullRequestReviewExecutionResult
 import com.example.aiplatform.assistant.PullRequestReviewHandler
@@ -63,7 +65,8 @@ class DeveloperHelpRoutingTest {
             memoryAgent = MemoryAgent(ProjectMemoryManager(chatRepo, FakeMemoryRepository(), openAi)),
             developerAssistantHandler = helpHandler,
             pullRequestReviewHandler = NoopPullRequestReviewHandler(),
-            supportAssistantHandler = NoopSupportAssistantHandler()
+            supportAssistantHandler = NoopSupportAssistantHandler(),
+            fileOpsAssistantHandler = NoopFileOpsAssistantHandler()
         )
 
         val result = orchestrator.sendMessage("p1", "c1", "/help как устроен проект?")
@@ -90,6 +93,11 @@ class DeveloperHelpRoutingTest {
 
         override suspend fun answer(projectId: String, chatId: String, question: String): SupportAssistantResult =
             SupportAssistantResult("none", usedRag = false, usedMcp = false, activeUserId = null, activeTicketId = null)
+    }
+
+    private class NoopFileOpsAssistantHandler : FileOpsAssistantHandler {
+        override suspend fun runTask(projectId: String, chatId: String, goal: String): FileOpsResult =
+            FileOpsResult("none", success = true, changedFiles = emptyList(), openedPr = false, prUrl = null)
     }
 
     @Test

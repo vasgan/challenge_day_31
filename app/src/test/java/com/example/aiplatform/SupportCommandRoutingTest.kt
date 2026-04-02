@@ -7,6 +7,8 @@ import com.example.aiplatform.agent.MemoryAgent
 import com.example.aiplatform.agent.RagAgent
 import com.example.aiplatform.assistant.DeveloperAssistantHandler
 import com.example.aiplatform.assistant.DeveloperAssistantResult
+import com.example.aiplatform.assistant.FileOpsAssistantHandler
+import com.example.aiplatform.assistant.FileOpsResult
 import com.example.aiplatform.assistant.PullRequestListResult
 import com.example.aiplatform.assistant.PullRequestReviewExecutionResult
 import com.example.aiplatform.assistant.PullRequestReviewHandler
@@ -108,7 +110,8 @@ class SupportCommandRoutingTest {
             memoryAgent = MemoryAgent(ProjectMemoryManager(chatRepository, FakeMemoryRepository(), openAiRepository)),
             developerAssistantHandler = NoopDeveloperAssistantHandler(),
             pullRequestReviewHandler = NoopPullRequestReviewHandler(),
-            supportAssistantHandler = supportHandler
+            supportAssistantHandler = supportHandler,
+            fileOpsAssistantHandler = NoopFileOpsAssistantHandler()
         )
 
         return Fixture(orchestrator, chatRepository, openAiRepository, supportHandler)
@@ -204,6 +207,11 @@ class SupportCommandRoutingTest {
 
         override suspend fun reviewPr(projectId: String, chatId: String, prNumber: Int): PullRequestReviewExecutionResult =
             PullRequestReviewExecutionResult("none", usedRag = false, usedMcp = false, postedToGithub = false)
+    }
+
+    private class NoopFileOpsAssistantHandler : FileOpsAssistantHandler {
+        override suspend fun runTask(projectId: String, chatId: String, goal: String): FileOpsResult =
+            FileOpsResult("none", success = true, changedFiles = emptyList(), openedPr = false, prUrl = null)
     }
 
     private class FakeProjectRepository(projects: List<Project>) : ProjectRepository {
