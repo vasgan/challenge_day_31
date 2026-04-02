@@ -38,40 +38,56 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class PullRequestReviewRoutingTest {
+class SupportCommandRoutingTest {
 
     @Test
-    fun `review command without number routes to list mode`() = runTest {
+    fun `support_user command routes to support handler`() = runTest {
         val fixture = fixture()
 
-        fixture.orchestrator.sendMessage("p1", "chat", "/review_pr")
+        val result = fixture.orchestrator.sendMessage("p1", "chat", "/support_user user-1")
 
-        assertEquals(1, fixture.reviewHandler.listCalls)
-        assertEquals(0, fixture.reviewHandler.runCalls)
+        assertEquals(1, fixture.supportHandler.setUserCalls)
+        assertEquals(0, fixture.supportHandler.setTicketCalls)
+        assertEquals(0, fixture.supportHandler.answerCalls)
+        assertEquals("active user: user-1", result.answer)
+        assertEquals(0, fixture.openAi.responsesCalls)
+        assertTrue(fixture.chatRepository.getMessages("chat").last().metadata.contains("\"mode\":\"set_user\""))
     }
 
     @Test
-    fun `review command with number routes to run mode`() = runTest {
+    fun `support_ticket command routes to support handler`() = runTest {
         val fixture = fixture()
 
-        fixture.orchestrator.sendMessage("p1", "chat", "/review_pr 123")
+        val result = fixture.orchestrator.sendMessage("p1", "chat", "/support_ticket ticket-17")
 
-        assertEquals(0, fixture.reviewHandler.listCalls)
-        assertEquals(1, fixture.reviewHandler.runCalls)
-        assertEquals(123, fixture.reviewHandler.lastPr)
-        val last = fixture.chatRepository.getMessages("chat").last()
-        assertEquals("review", last.content)
+        assertEquals(0, fixture.supportHandler.setUserCalls)
+        assertEquals(1, fixture.supportHandler.setTicketCalls)
+        assertEquals(0, fixture.supportHandler.answerCalls)
+        assertEquals("active ticket: ticket-17", result.answer)
+        assertEquals(0, fixture.openAi.responsesCalls)
+        assertTrue(fixture.chatRepository.getMessages("chat").last().metadata.contains("\"mode\":\"set_ticket\""))
     }
 
     @Test
-    fun `invalid review command is handled safely in chat`() = runTest {
+    fun `support command routes to support answer mode`() = runTest {
         val fixture = fixture()
 
-        val result = fixture.orchestrator.sendMessage("p1", "chat", "/review_pr abc")
+        val result = fixture.orchestrator.sendMessage("p1", "chat", "/support Почему не работает авторизация?")
 
-        assertTrue(result.answer.contains("Неверный формат"))
-        val last = fixture.chatRepository.getMessages("chat").last()
-        assertTrue(last.content.contains("Неверный формат"))
+        assertEquals(1, fixture.supportHandler.answerCalls)
+        assertEquals("support-answer", result.answer)
+        assertTrue(fixture.chatRepository.getMessages("chat").last().metadata.contains("\"mode\":\"answer\""))
+    }
+
+    @Test
+    fun `invalid support format is handled safely`() = runTest {
+        val fixture = fixture()
+
+        val result = fixture.orchestrator.sendMessage("p1", "chat", "/support_user")
+
+        assertTrue(result.answer.contains("/support_user <userId>"))
+        assertTrue(fixture.chatRepository.getMessages("chat").last().content.contains("/support_user <userId>"))
+        assertEquals(0, fixture.openAi.responsesCalls)
     }
 
     private fun fixture(): Fixture {
@@ -80,7 +96,7 @@ class PullRequestReviewRoutingTest {
         )
         val chatRepository = FakeChatRepository(mapOf("chat" to Chat("chat", "p1", "General")))
         val openAiRepository = FakeOpenAiRepository()
-        val reviewHandler = CaptureReviewHandler()
+        val supportHandler = CaptureSupportHandler()
 
         val orchestrator = AgentOrchestrator(
             projectRepository = projectRepository,
@@ -91,33 +107,88 @@ class PullRequestReviewRoutingTest {
             mcpAgent = McpAgent(FakeMcpRepository(), GitBranchTool()),
             memoryAgent = MemoryAgent(ProjectMemoryManager(chatRepository, FakeMemoryRepository(), openAiRepository)),
             developerAssistantHandler = NoopDeveloperAssistantHandler(),
-            pullRequestReviewHandler = reviewHandler,
-            supportAssistantHandler = NoopSupportAssistantHandler()
+            pullRequestReviewHandler = NoopPullRequestReviewHandler(),
+            supportAssistantHandler = supportHandler
         )
 
-        return Fixture(orchestrator, chatRepository, reviewHandler)
+        return Fixture(orchestrator, chatRepository, openAiRepository, supportHandler)
     }
 
     private data class Fixture(
         val orchestrator: AgentOrchestrator,
         val chatRepository: FakeChatRepository,
-        val reviewHandler: CaptureReviewHandler
+        val openAi: FakeOpenAiRepository,
+        val supportHandler: CaptureSupportHandler
     )
 
-    private class CaptureReviewHandler : PullRequestReviewHandler {
-        var listCalls = 0
-        var runCalls = 0
-        var lastPr: Int? = null
+    private class CaptureSupportHandler : SupportAssistantHandler {
+        var setUserCalls = 0
+        var setTicketCalls = 0
+        var answerCalls = 0
 
-        override suspend fun listOpenPrs(projectId: String): PullRequestListResult {
-            listCalls += 1
-            return PullRequestListResult("list", success = true)
+        override suspend fun setActiveUser(projectId: String, chatId: String, userId: String): SupportAssistantResult {
+            setUserCalls += 1
+            val normalized = userId.trim()
+            return if (normalized.isBlank()) {
+                SupportAssistantResult(
+                    answer = "Используйте формат: /support_user <userId>",
+                    usedRag = false,
+                    usedMcp = false,
+                    activeUserId = null,
+                    activeTicketId = null
+                )
+            } else {
+                SupportAssistantResult(
+                    answer = "active user: $normalized",
+                    usedRag = false,
+                    usedMcp = true,
+                    activeUserId = normalized,
+                    activeTicketId = null
+                )
+            }
         }
 
-        override suspend fun reviewPr(projectId: String, chatId: String, prNumber: Int): PullRequestReviewExecutionResult {
-            runCalls += 1
-            lastPr = prNumber
-            return PullRequestReviewExecutionResult("review", usedRag = true, usedMcp = true, postedToGithub = false)
+        override suspend fun setActiveTicket(projectId: String, chatId: String, ticketId: String): SupportAssistantResult {
+            setTicketCalls += 1
+            val normalized = ticketId.trim()
+            return if (normalized.isBlank()) {
+                SupportAssistantResult(
+                    answer = "Используйте формат: /support_ticket <ticketId>",
+                    usedRag = false,
+                    usedMcp = false,
+                    activeUserId = null,
+                    activeTicketId = null
+                )
+            } else {
+                SupportAssistantResult(
+                    answer = "active ticket: $normalized",
+                    usedRag = false,
+                    usedMcp = true,
+                    activeUserId = null,
+                    activeTicketId = normalized
+                )
+            }
+        }
+
+        override suspend fun answer(projectId: String, chatId: String, question: String): SupportAssistantResult {
+            answerCalls += 1
+            return if (question.isBlank()) {
+                SupportAssistantResult(
+                    answer = "Используйте формат: /support <вопрос>",
+                    usedRag = false,
+                    usedMcp = false,
+                    activeUserId = null,
+                    activeTicketId = null
+                )
+            } else {
+                SupportAssistantResult(
+                    answer = "support-answer",
+                    usedRag = true,
+                    usedMcp = true,
+                    activeUserId = "user-1",
+                    activeTicketId = "ticket-17"
+                )
+            }
         }
     }
 
@@ -127,15 +198,12 @@ class PullRequestReviewRoutingTest {
         }
     }
 
-    private class NoopSupportAssistantHandler : SupportAssistantHandler {
-        override suspend fun setActiveUser(projectId: String, chatId: String, userId: String): SupportAssistantResult =
-            SupportAssistantResult("none", usedRag = false, usedMcp = false, activeUserId = null, activeTicketId = null)
+    private class NoopPullRequestReviewHandler : PullRequestReviewHandler {
+        override suspend fun listOpenPrs(projectId: String): PullRequestListResult =
+            PullRequestListResult("none", success = true)
 
-        override suspend fun setActiveTicket(projectId: String, chatId: String, ticketId: String): SupportAssistantResult =
-            SupportAssistantResult("none", usedRag = false, usedMcp = false, activeUserId = null, activeTicketId = null)
-
-        override suspend fun answer(projectId: String, chatId: String, question: String): SupportAssistantResult =
-            SupportAssistantResult("none", usedRag = false, usedMcp = false, activeUserId = null, activeTicketId = null)
+        override suspend fun reviewPr(projectId: String, chatId: String, prNumber: Int): PullRequestReviewExecutionResult =
+            PullRequestReviewExecutionResult("none", usedRag = false, usedMcp = false, postedToGithub = false)
     }
 
     private class FakeProjectRepository(projects: List<Project>) : ProjectRepository {
@@ -177,19 +245,24 @@ class PullRequestReviewRoutingTest {
     }
 
     private class FakeMcpRepository : McpRepository {
-        override fun observeConnections(projectId: String): Flow<List<McpConnection>> = emptyFlow()
-        override suspend fun listConnections(projectId: String): List<McpConnection> = emptyList()
-        override suspend fun listConnections(projectId: String, type: McpConnectionType): List<McpConnection> = emptyList()
+        override fun observeConnections(projectId: String) = emptyFlow<List<McpConnection>>()
+        override suspend fun listConnections(projectId: String) = emptyList<McpConnection>()
+        override suspend fun listConnections(projectId: String, type: McpConnectionType) = emptyList<McpConnection>()
         override suspend fun upsertConnection(connection: McpConnection) {}
     }
 
     private class FakeOpenAiRepository : OpenAiRepository {
+        var responsesCalls = 0
+
         override suspend fun responses(
             model: ProjectTextModel,
             systemPrompt: String,
             context: String,
             userInput: String
-        ): String = "ok"
+        ): String {
+            responsesCalls += 1
+            return "ok"
+        }
 
         override suspend fun summarizeMemory(
             model: ProjectTextModel,

@@ -1,12 +1,18 @@
 package com.example.aiplatform.data.mcp.github
 
 import com.example.aiplatform.domain.model.GithubReadme
+import com.example.aiplatform.domain.model.GithubBranchInfo
+import com.example.aiplatform.domain.model.GithubCreatedPullRequest
+import com.example.aiplatform.domain.model.GithubFileContent
+import com.example.aiplatform.domain.model.GithubFileSearchMatch
+import com.example.aiplatform.domain.model.GithubFileUpsertResult
 import com.example.aiplatform.domain.model.GithubPullRequestDetails
 import com.example.aiplatform.domain.model.GithubPullRequestDiff
 import com.example.aiplatform.domain.model.GithubPullRequestFile
 import com.example.aiplatform.domain.model.GithubPullRequestReviewRequest
 import com.example.aiplatform.domain.model.GithubPullRequestReviewResult
 import com.example.aiplatform.domain.model.GithubPullRequestSummary
+import com.example.aiplatform.domain.model.GithubRepoFileEntry
 import com.example.aiplatform.domain.model.GithubRepo
 import com.example.aiplatform.domain.model.ProjectGithubBinding
 
@@ -110,6 +116,120 @@ class GithubMcpServer(
         val payload = result.data as? GithubMcpToolData.PullRequestReviewPayload
             ?: return Result.failure(IllegalStateException(result.error ?: "Pull request review payload missing"))
         return Result.success(payload.result)
+    }
+
+    suspend fun githubListRepositoryFiles(
+        projectId: String,
+        path: String = "",
+        recursive: Boolean = true
+    ): Result<List<GithubRepoFileEntry>> {
+        val result = executeTool(
+            GithubMcpTools.LIST_REPOSITORY_FILES,
+            mapOf(
+                "projectId" to projectId,
+                "path" to path,
+                "recursive" to recursive.toString()
+            )
+        )
+        val payload = result.data as? GithubMcpToolData.RepositoryFilesPayload
+            ?: return Result.failure(IllegalStateException(result.error ?: "Repository files payload missing"))
+        return Result.success(payload.files)
+    }
+
+    suspend fun githubGetFileContent(
+        projectId: String,
+        path: String,
+        ref: String? = null
+    ): Result<GithubFileContent> {
+        val args = mutableMapOf(
+            "projectId" to projectId,
+            "path" to path
+        )
+        ref?.takeIf { it.isNotBlank() }?.let { args["ref"] = it }
+        val result = executeTool(GithubMcpTools.GET_FILE_CONTENT, args)
+        val payload = result.data as? GithubMcpToolData.FileContentPayload
+            ?: return Result.failure(IllegalStateException(result.error ?: "File content payload missing"))
+        return Result.success(payload.file)
+    }
+
+    suspend fun githubSearchInFiles(
+        projectId: String,
+        query: String,
+        extensions: List<String>
+    ): Result<List<GithubFileSearchMatch>> {
+        val result = executeTool(
+            GithubMcpTools.SEARCH_IN_FILES,
+            mapOf(
+                "projectId" to projectId,
+                "query" to query,
+                "extensions" to extensions.joinToString(",")
+            )
+        )
+        val payload = result.data as? GithubMcpToolData.FileSearchPayload
+            ?: return Result.failure(IllegalStateException(result.error ?: "File search payload missing"))
+        return Result.success(payload.matches)
+    }
+
+    suspend fun githubCreateBranch(
+        projectId: String,
+        base: String,
+        branch: String
+    ): Result<GithubBranchInfo> {
+        val result = executeTool(
+            GithubMcpTools.CREATE_BRANCH,
+            mapOf(
+                "projectId" to projectId,
+                "base" to base,
+                "branch" to branch
+            )
+        )
+        val payload = result.data as? GithubMcpToolData.BranchPayload
+            ?: return Result.failure(IllegalStateException(result.error ?: "Branch payload missing"))
+        return Result.success(payload.branch)
+    }
+
+    suspend fun githubUpsertFileContent(
+        projectId: String,
+        branch: String,
+        path: String,
+        content: String,
+        message: String
+    ): Result<GithubFileUpsertResult> {
+        val result = executeTool(
+            GithubMcpTools.UPSERT_FILE_CONTENT,
+            mapOf(
+                "projectId" to projectId,
+                "branch" to branch,
+                "path" to path,
+                "content" to content,
+                "message" to message
+            )
+        )
+        val payload = result.data as? GithubMcpToolData.FileUpsertPayload
+            ?: return Result.failure(IllegalStateException(result.error ?: "File upsert payload missing"))
+        return Result.success(payload.upsert)
+    }
+
+    suspend fun githubCreatePullRequest(
+        projectId: String,
+        title: String,
+        body: String,
+        head: String,
+        base: String
+    ): Result<GithubCreatedPullRequest> {
+        val result = executeTool(
+            GithubMcpTools.CREATE_PULL_REQUEST,
+            mapOf(
+                "projectId" to projectId,
+                "title" to title,
+                "body" to body,
+                "head" to head,
+                "base" to base
+            )
+        )
+        val payload = result.data as? GithubMcpToolData.CreatedPullRequestPayload
+            ?: return Result.failure(IllegalStateException(result.error ?: "Create pull request payload missing"))
+        return Result.success(payload.pullRequest)
     }
 
     private suspend fun executeTool(tool: String, arguments: Map<String, String>): GithubMcpToolResult {

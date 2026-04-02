@@ -4,6 +4,8 @@ import com.example.aiplatform.assistant.DeveloperAssistantHandler
 import com.example.aiplatform.assistant.PullRequestListResult
 import com.example.aiplatform.assistant.PullRequestReviewExecutionResult
 import com.example.aiplatform.assistant.PullRequestReviewHandler
+import com.example.aiplatform.assistant.SupportAssistantHandler
+import com.example.aiplatform.assistant.SupportAssistantResult
 import com.example.aiplatform.domain.agent.AgentContext
 import com.example.aiplatform.domain.agent.AgentResult
 import com.example.aiplatform.domain.model.Message
@@ -28,7 +30,8 @@ class AgentOrchestrator(
     private val mcpAgent: McpAgent,
     private val memoryAgent: MemoryAgent,
     private val developerAssistantHandler: DeveloperAssistantHandler,
-    private val pullRequestReviewHandler: PullRequestReviewHandler
+    private val pullRequestReviewHandler: PullRequestReviewHandler,
+    private val supportAssistantHandler: SupportAssistantHandler
 ) {
 
     suspend fun sendMessage(projectId: String, chatId: String, userInput: String): AgentResult {
@@ -49,6 +52,84 @@ class AgentOrchestrator(
         )
 
         val trimmedInput = userInput.trim()
+
+        if (trimmedInput == "/support_user" || trimmedInput.startsWith("/support_user ")) {
+            val userId = trimmedInput.removePrefix("/support_user").trim()
+            val result = runCatching {
+                supportAssistantHandler.setActiveUser(projectId, chatId, userId)
+            }.getOrElse { throwable ->
+                SupportAssistantResult(
+                    answer = "Ошибка support: ${throwable.message ?: "unknown"}",
+                    usedRag = false,
+                    usedMcp = false,
+                    activeUserId = null,
+                    activeTicketId = null
+                )
+            }
+            chatRepository.addMessage(
+                Message(
+                    id = UUID.randomUUID().toString(),
+                    chatId = chatId,
+                    role = MessageRole.ASSISTANT,
+                    content = result.answer,
+                    metadata = "{\"supportCommand\":true,\"mode\":\"set_user\",\"userId\":\"${result.activeUserId.orEmpty()}\",\"success\":${result.activeUserId != null}}",
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            return AgentResult(answer = result.answer, usedRag = result.usedRag, usedMcp = result.usedMcp)
+        }
+
+        if (trimmedInput == "/support_ticket" || trimmedInput.startsWith("/support_ticket ")) {
+            val ticketId = trimmedInput.removePrefix("/support_ticket").trim()
+            val result = runCatching {
+                supportAssistantHandler.setActiveTicket(projectId, chatId, ticketId)
+            }.getOrElse { throwable ->
+                SupportAssistantResult(
+                    answer = "Ошибка support: ${throwable.message ?: "unknown"}",
+                    usedRag = false,
+                    usedMcp = false,
+                    activeUserId = null,
+                    activeTicketId = null
+                )
+            }
+            chatRepository.addMessage(
+                Message(
+                    id = UUID.randomUUID().toString(),
+                    chatId = chatId,
+                    role = MessageRole.ASSISTANT,
+                    content = result.answer,
+                    metadata = "{\"supportCommand\":true,\"mode\":\"set_ticket\",\"ticketId\":\"${result.activeTicketId.orEmpty()}\",\"success\":${result.activeTicketId != null}}",
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            return AgentResult(answer = result.answer, usedRag = result.usedRag, usedMcp = result.usedMcp)
+        }
+
+        if (trimmedInput == "/support" || trimmedInput.startsWith("/support ")) {
+            val question = trimmedInput.removePrefix("/support").trim()
+            val result = runCatching {
+                supportAssistantHandler.answer(projectId, chatId, question)
+            }.getOrElse { throwable ->
+                SupportAssistantResult(
+                    answer = "Ошибка support: ${throwable.message ?: "unknown"}",
+                    usedRag = false,
+                    usedMcp = false,
+                    activeUserId = null,
+                    activeTicketId = null
+                )
+            }
+            chatRepository.addMessage(
+                Message(
+                    id = UUID.randomUUID().toString(),
+                    chatId = chatId,
+                    role = MessageRole.ASSISTANT,
+                    content = result.answer,
+                    metadata = "{\"supportCommand\":true,\"mode\":\"answer\",\"userId\":\"${result.activeUserId.orEmpty()}\",\"ticketId\":\"${result.activeTicketId.orEmpty()}\",\"usedRag\":${result.usedRag},\"usedMcp\":${result.usedMcp}}",
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            return AgentResult(answer = result.answer, usedRag = result.usedRag, usedMcp = result.usedMcp)
+        }
 
         if (trimmedInput == "/review_pr") {
             val result = runCatching {

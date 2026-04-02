@@ -133,19 +133,25 @@ class GithubApiClient(
             return Result.failure(IllegalArgumentException("Review body is empty"))
         }
         return safeCall {
-            val dto = GithubSubmitReviewRequestDto(
-                body = request.body,
-                event = "COMMENT",
-                comments = request.comments.map { comment ->
-                    GithubSubmitReviewCommentDto(
-                        path = comment.path,
-                        line = comment.line,
-                        side = comment.side,
-                        body = comment.body
+            val ownerTrimmed = owner.trim()
+            val repoTrimmed = repo.trim()
+            val dtoWithComments = request.toGithubDto(includeComments = true)
+            val response = runCatching {
+                service.submitPullRequestReview(ownerTrimmed, repoTrimmed, prNumber, dtoWithComments)
+            }.recoverCatching { throwable ->
+                // GitHub often returns 422 when inline comments don't match PR diff lines.
+                val http = throwable as? HttpException
+                if (http?.code() == 422 && dtoWithComments.comments.isNotEmpty()) {
+                    service.submitPullRequestReview(
+                        ownerTrimmed,
+                        repoTrimmed,
+                        prNumber,
+                        request.toGithubDto(includeComments = false)
                     )
+                } else {
+                    throw throwable
                 }
-            )
-            val response = service.submitPullRequestReview(owner.trim(), repo.trim(), prNumber, dto)
+            }.getOrElse { throw it }
             GithubPullRequestReviewResult(
                 reviewId = response.id.toString(),
                 htmlUrl = response.htmlUrl,
@@ -239,3 +245,26 @@ private fun GithubPullRequestFileDto.toDomain(): GithubPullRequestFile = GithubP
     deletions = deletions,
     patch = patch
 )
+
+private fun GithubPullRequestReviewRequest.toGithubDto(includeComments: Boolean): GithubSubmitReviewRequestDto {
+    val commentsPayload = if (!includeComments) {
+        emptyList()
+    } else {
+        comments.map { comment ->
+            GithubSubmitReviewCommentDto(
+                path = comment.path.removePrefix("-").trim(),
+                line = comment.line,
+                side = comment.side,
+                body = comment.body.trim()
+            )
+        }.filter { dto ->
+            dto.path.isNotBlank() && dto.line > 0 && dto.body.isNotBlank()
+        }
+    }
+
+    return GithubSubmitReviewRequestDto(
+        body = body,
+        event = "COMMENT",
+        comments = commentsPayload
+    )
+}
